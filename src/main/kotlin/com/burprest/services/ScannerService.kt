@@ -22,28 +22,40 @@ class ScannerService(private val api: MontoyaApi) {
 
     fun crawl(request: ScanRequest): ScanStartResponse {
         val id = UUID.randomUUID().toString().take(8)
-        val crawlConfig = CrawlConfiguration.crawlConfiguration(request.url)
-        val crawl = api.scanner().startCrawl(crawlConfig)
-        scans[id] = ScanState.CrawlState(id, crawl)
-        return ScanStartResponse(scanId = id, status = "running")
+        try {
+            val crawlConfig = CrawlConfiguration.crawlConfiguration(request.url)
+            val crawl = api.scanner().startCrawl(crawlConfig)
+            scans[id] = ScanState.CrawlState(id, crawl)
+            return ScanStartResponse(scanId = id, status = "running")
+        } catch (e: Exception) {
+            throw IllegalStateException("Failed to start crawl. Ensure target is in scope and Burp Scanner is available: ${e.message}")
+        }
     }
 
     fun audit(request: ScanRequest): ScanStartResponse {
         val id = UUID.randomUUID().toString().take(8)
-        val auditConfig = AuditConfiguration.auditConfiguration(BuiltInAuditConfiguration.LEGACY_ACTIVE_AUDIT_CHECKS)
-        val audit = api.scanner().startAudit(auditConfig)
-        scans[id] = ScanState.AuditState(id, audit)
-        return ScanStartResponse(scanId = id, status = "running")
+        try {
+            val auditConfig = AuditConfiguration.auditConfiguration(BuiltInAuditConfiguration.LEGACY_ACTIVE_AUDIT_CHECKS)
+            val audit = api.scanner().startAudit(auditConfig)
+            scans[id] = ScanState.AuditState(id, audit)
+            return ScanStartResponse(scanId = id, status = "running")
+        } catch (e: Exception) {
+            throw IllegalStateException("Failed to start audit. Ensure Burp Scanner Pro is available: ${e.message}")
+        }
     }
 
     fun crawlAndAudit(request: ScanRequest): ScanStartResponse {
         val id = UUID.randomUUID().toString().take(8)
-        val crawlConfig = CrawlConfiguration.crawlConfiguration(request.url)
-        val auditConfig = AuditConfiguration.auditConfiguration(BuiltInAuditConfiguration.LEGACY_ACTIVE_AUDIT_CHECKS)
-        val crawl = api.scanner().startCrawl(crawlConfig)
-        val audit = api.scanner().startAudit(auditConfig)
-        scans[id] = ScanState.CrawlAndAuditState(id, crawl, audit)
-        return ScanStartResponse(scanId = id, status = "running")
+        try {
+            val crawlConfig = CrawlConfiguration.crawlConfiguration(request.url)
+            val auditConfig = AuditConfiguration.auditConfiguration(BuiltInAuditConfiguration.LEGACY_ACTIVE_AUDIT_CHECKS)
+            val crawl = api.scanner().startCrawl(crawlConfig)
+            val audit = api.scanner().startAudit(auditConfig)
+            scans[id] = ScanState.CrawlAndAuditState(id, crawl, audit)
+            return ScanStartResponse(scanId = id, status = "running")
+        } catch (e: Exception) {
+            throw IllegalStateException("Failed to start crawl+audit: ${e.message}")
+        }
     }
 
     fun status(scanId: String): ScanStatusResponse {
@@ -93,7 +105,6 @@ class ScannerService(private val api: MontoyaApi) {
     }
 
     fun issueDefinitions(): IssueDefinitionsResponse {
-        // Use siteMap().issues() as issueDefinitions() is not available
         val issues = api.siteMap().issues()
         val uniqueNames = mutableSetOf<String>()
         val defs = issues.mapNotNull {

@@ -76,11 +76,19 @@ class RestServer(private val api: MontoyaApi, private val port: Int = 8089) {
                     ApiResponse.error<Unit>("INVALID_REQUEST", cause.message ?: "Bad request"),
                 )
             }
+            exception<IllegalStateException> { call, cause ->
+                api.logging().logToError("[burp-rest] State error: ${cause.message}")
+                call.respond(
+                    HttpStatusCode.ServiceUnavailable,
+                    ApiResponse.error<Unit>("SERVICE_UNAVAILABLE", cause.message ?: "Service unavailable"),
+                )
+            }
             exception<Throwable> { call, cause ->
-                api.logging().logToError("[burp-rest] Error: ${cause.message}")
+                val stackTrace = cause.stackTraceToString().take(500)
+                api.logging().logToError("[burp-rest] Error: ${cause::class.simpleName}: ${cause.message}\n$stackTrace")
                 call.respond(
                     HttpStatusCode.InternalServerError,
-                    ApiResponse.error<Unit>("INTERNAL_ERROR", cause.message ?: "Internal error"),
+                    ApiResponse.error<Unit>("INTERNAL_ERROR", "${cause::class.simpleName}: ${cause.message}"),
                 )
             }
         }

@@ -15,7 +15,11 @@ class CollaboratorService(private val api: MontoyaApi) {
 
     private fun ensureClient(): CollaboratorClient {
         if (client == null) {
-            client = api.collaborator().createClient()
+            try {
+                client = api.collaborator().createClient()
+            } catch (e: Exception) {
+                throw IllegalStateException("Burp Collaborator not available. Ensure Burp Suite Pro has Collaborator configured: ${e.message}")
+            }
         }
         return client!!
     }
