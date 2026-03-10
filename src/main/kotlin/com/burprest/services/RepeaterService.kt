@@ -48,7 +48,7 @@ class RepeaterService(private val api: MontoyaApi) {
         } else if (request.requestId != null) {
             getHistoryRequest(request.requestId)
         } else {
-            HttpRequest.httpRequest("https://example.com")
+            HttpRequest.httpRequestFromUrl("https://example.com")
         }
 
         api.repeater().sendToRepeater(httpRequest, name)
@@ -83,7 +83,7 @@ class RepeaterService(private val api: MontoyaApi) {
     }
 
     internal fun buildRequest(data: HttpRequestData): HttpRequest {
-        var req = HttpRequest.httpRequest(data.url)
+        var req = HttpRequest.httpRequestFromUrl(data.url)
             .withMethod(data.method)
 
         data.headers.forEach { h ->
