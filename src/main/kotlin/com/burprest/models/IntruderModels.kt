@@ -39,6 +39,7 @@ data class AttackStatusResponse(
     val progress: Int = 0,
     val requestCount: Int = 0,
     val errorCount: Int = 0,
+    val isComplete: Boolean = false,
 )
 
 @Serializable
@@ -49,6 +50,9 @@ data class AttackResultEntry(
     val length: Int,
     val durationMs: Long,
     val error: String? = null,
+    val contentType: String? = null,
+    val bodyPreview: String? = null,
+    val anomalous: Boolean = false,
 )
 
 @Serializable
@@ -72,4 +76,12 @@ data class QuickFuzzResponse(
     val results: List<AttackResultEntry>,
     val total: Int,
     val durationMs: Long,
+    val baseline: QuickFuzzBaseline? = null,
+)
+
+@Serializable
+data class QuickFuzzBaseline(
+    val statusCode: Int,
+    val length: Int,
+    val contentType: String?,
 )

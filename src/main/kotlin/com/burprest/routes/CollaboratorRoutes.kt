@@ -3,6 +3,7 @@ package com.burprest.routes
 import com.burprest.models.ApiResponse
 import com.burprest.models.BatchGenerateRequest
 import com.burprest.services.CollaboratorService
+import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
@@ -11,22 +12,50 @@ import io.ktor.server.routing.*
 fun Route.collaboratorRoutes(service: CollaboratorService) {
     route("/collaborator") {
         post("/generate") {
-            call.respond(ApiResponse.ok(service.generatePayload()))
+            try {
+                call.respond(ApiResponse.ok(service.generatePayload()))
+            } catch (e: Throwable) {
+                call.respond(HttpStatusCode.ServiceUnavailable, ApiResponse.error<Unit>(
+                    "SERVICE_UNAVAILABLE",
+                    "Burp Collaborator not available. Requires Burp Suite Professional. ${e::class.simpleName}: ${e.message}"
+                ))
+            }
         }
 
         post("/generate/batch") {
-            val request = call.receive<BatchGenerateRequest>()
-            call.respond(ApiResponse.ok(service.generateBatch(request.count)))
+            try {
+                val request = call.receive<BatchGenerateRequest>()
+                call.respond(ApiResponse.ok(service.generateBatch(request.count)))
+            } catch (e: Throwable) {
+                call.respond(HttpStatusCode.ServiceUnavailable, ApiResponse.error<Unit>(
+                    "SERVICE_UNAVAILABLE",
+                    "Burp Collaborator not available. Requires Burp Suite Professional. ${e::class.simpleName}: ${e.message}"
+                ))
+            }
         }
 
         get("/poll") {
-            call.respond(ApiResponse.ok(service.poll()))
+            try {
+                call.respond(ApiResponse.ok(service.poll()))
+            } catch (e: Throwable) {
+                call.respond(HttpStatusCode.ServiceUnavailable, ApiResponse.error<Unit>(
+                    "SERVICE_UNAVAILABLE",
+                    "Burp Collaborator not available. Requires Burp Suite Professional. ${e::class.simpleName}: ${e.message}"
+                ))
+            }
         }
 
         get("/poll/{id}") {
             val id = call.parameters["id"]
                 ?: return@get call.respond(ApiResponse.error<Unit>("INVALID_PARAM", "Missing ID"))
-            call.respond(ApiResponse.ok(service.pollById(id)))
+            try {
+                call.respond(ApiResponse.ok(service.pollById(id)))
+            } catch (e: Throwable) {
+                call.respond(HttpStatusCode.ServiceUnavailable, ApiResponse.error<Unit>(
+                    "SERVICE_UNAVAILABLE",
+                    "Burp Collaborator not available. Requires Burp Suite Professional. ${e::class.simpleName}: ${e.message}"
+                ))
+            }
         }
     }
 }

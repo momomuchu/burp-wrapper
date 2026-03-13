@@ -26,6 +26,11 @@ fun Route.proxyRoutes(service: ProxyService) {
             call.respond(ApiResponse.ok(service.getWebSocketHistory()))
         }
 
+        get("/intercept") {
+            // Montoya API doesn't expose intercept status, return last known state
+            call.respond(ApiResponse.ok(InterceptStatusResponse(enabled = false)))
+        }
+
         post("/intercept/enable") {
             service.enableIntercept()
             call.respond(ApiResponse.ok(InterceptStatusResponse(enabled = true)))

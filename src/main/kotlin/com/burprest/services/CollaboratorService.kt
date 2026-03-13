@@ -15,10 +15,24 @@ class CollaboratorService(private val api: MontoyaApi) {
 
     private fun ensureClient(): CollaboratorClient {
         if (client == null) {
+            val collaborator = try {
+                api.collaborator()
+            } catch (e: Throwable) {
+                throw IllegalStateException(
+                    "Burp Collaborator API not available. This requires Burp Suite Professional. " +
+                    "Community Edition does not support Collaborator. Error: ${e::class.simpleName}: ${e.message}"
+                )
+            } ?: throw IllegalStateException(
+                "Burp Collaborator API returned null. This requires Burp Suite Professional " +
+                "with Collaborator server configured (Project Options > Misc > Burp Collaborator Server)."
+            )
             try {
-                client = api.collaborator().createClient()
-            } catch (e: Exception) {
-                throw IllegalStateException("Burp Collaborator not available. Ensure Burp Suite Pro has Collaborator configured: ${e.message}")
+                client = collaborator.createClient()
+            } catch (e: Throwable) {
+                throw IllegalStateException(
+                    "Failed to create Collaborator client. Ensure Collaborator server is configured " +
+                    "and reachable. Error: ${e::class.simpleName}: ${e.message}"
+                )
             }
         }
         return client!!
@@ -26,7 +40,11 @@ class CollaboratorService(private val api: MontoyaApi) {
 
     fun generatePayload(): GeneratePayloadResponse {
         val c = ensureClient()
-        val payload = c.generatePayload()
+        val payload = try {
+            c.generatePayload()
+        } catch (e: Throwable) {
+            throw IllegalStateException("Failed to generate Collaborator payload: ${e::class.simpleName}: ${e.message}")
+        }
         val id = UUID.randomUUID().toString().take(8)
         payloads[id] = payload
 
@@ -46,18 +64,22 @@ class CollaboratorService(private val api: MontoyaApi) {
 
     fun poll(): PollResponse {
         val c = ensureClient()
-        val interactions = c.getAllInteractions()
-        return PollResponse(
-            found = interactions.isNotEmpty(),
-            interactions = interactions.map { interaction ->
-                Interaction(
-                    id = interaction.id().toString(),
-                    type = interaction.type().name,
-                    clientIp = interaction.clientIp().toString(),
-                    timestamp = Instant.now().toString(),
-                )
-            },
-        )
+        return try {
+            val interactions = c.getAllInteractions()
+            PollResponse(
+                found = interactions.isNotEmpty(),
+                interactions = interactions.map { interaction ->
+                    Interaction(
+                        id = interaction.id().toString(),
+                        type = interaction.type().name,
+                        clientIp = interaction.clientIp().toString(),
+                        timestamp = Instant.now().toString(),
+                    )
+                },
+            )
+        } catch (e: Throwable) {
+            PollResponse(found = false, interactions = emptyList())
+        }
     }
 
     fun pollById(id: String): PollResponse {
@@ -65,17 +87,21 @@ class CollaboratorService(private val api: MontoyaApi) {
             ?: return PollResponse(found = false, interactions = emptyList())
 
         val c = ensureClient()
-        val interactions = c.getInteractions(InteractionFilter.interactionPayloadFilter(payload.toString()))
-        return PollResponse(
-            found = interactions.isNotEmpty(),
-            interactions = interactions.map { interaction ->
-                Interaction(
-                    id = interaction.id().toString(),
-                    type = interaction.type().name,
-                    clientIp = interaction.clientIp().toString(),
-                    timestamp = Instant.now().toString(),
-                )
-            },
-        )
+        return try {
+            val interactions = c.getInteractions(InteractionFilter.interactionPayloadFilter(payload.toString()))
+            PollResponse(
+                found = interactions.isNotEmpty(),
+                interactions = interactions.map { interaction ->
+                    Interaction(
+                        id = interaction.id().toString(),
+                        type = interaction.type().name,
+                        clientIp = interaction.clientIp().toString(),
+                        timestamp = Instant.now().toString(),
+                    )
+                },
+            )
+        } catch (e: Throwable) {
+            PollResponse(found = false, interactions = emptyList())
+        }
     }
 }

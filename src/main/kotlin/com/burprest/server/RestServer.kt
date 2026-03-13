@@ -1,6 +1,10 @@
 package com.burprest.server
 
 import burp.api.montoya.MontoyaApi
+import com.burprest.db.DatabaseManager
+import com.burprest.db.HistoryDao
+import com.burprest.db.SessionDao
+import com.burprest.db.SitemapDao
 import com.burprest.models.ApiResponse
 import com.burprest.routes.*
 import com.burprest.services.*
@@ -23,15 +27,31 @@ class RestServer(private val api: MontoyaApi, private val port: Int = 8089) {
     private var server: ApplicationEngine? = null
     private val startTime = System.currentTimeMillis()
 
+    // Database (nullable — extension works without DB if init fails)
+    private val db: DatabaseManager? = try {
+        DatabaseManager(
+            System.getProperty("user.home") + "/.burp-rest/burpdata"
+        ).also { api.logging().logToOutput("[burp-rest] Database initialized at ~/.burp-rest/burpdata") }
+    } catch (e: Exception) {
+        api.logging().logToError("[burp-rest] Database init failed: ${e::class.simpleName}: ${e.message}")
+        null
+    }
+    private val historyDao = db?.let { HistoryDao(it) }
+    private val sitemapDao = db?.let { SitemapDao(it) }
+    private val sessionDao = db?.let { SessionDao(it) }
+
     // Services
     private val proxyService = ProxyService(api)
-    private val repeaterService = RepeaterService(api)
+    private val repeaterService = RepeaterService(api, historyDao, sitemapDao)
     private val collaboratorService = CollaboratorService(api)
     private val intruderService = IntruderService(api, repeaterService)
     private val scannerService = ScannerService(api)
     private val targetService = TargetService(api)
     private val decoderService = DecoderService()
     private val configService = ConfigService(api)
+    private val sessionService = SessionService(api, historyDao, sitemapDao, sessionDao)
+    private val securityScanService = SecurityScanService(api, sessionService, historyDao)
+    private val utilsService = UtilsService(sessionService)
 
     fun start() {
         server = embeddedServer(Netty, port = port, host = "127.0.0.1") {
@@ -44,6 +64,7 @@ class RestServer(private val api: MontoyaApi, private val port: Int = 8089) {
 
     fun stop() {
         server?.stop(1000, 2000)
+        db?.close()
         api.logging().logToOutput("[burp-rest] Server stopped")
     }
 
@@ -70,6 +91,18 @@ class RestServer(private val api: MontoyaApi, private val port: Int = 8089) {
         }
 
         install(StatusPages) {
+            exception<io.ktor.server.plugins.BadRequestException> { call, cause ->
+                call.respond(
+                    HttpStatusCode.BadRequest,
+                    ApiResponse.error<Unit>("INVALID_REQUEST", cause.message ?: "Bad request"),
+                )
+            }
+            exception<kotlinx.serialization.SerializationException> { call, cause ->
+                call.respond(
+                    HttpStatusCode.BadRequest,
+                    ApiResponse.error<Unit>("INVALID_REQUEST", "Invalid request body: ${cause.message}"),
+                )
+            }
             exception<IllegalArgumentException> { call, cause ->
                 call.respond(
                     HttpStatusCode.BadRequest,
@@ -117,6 +150,12 @@ class RestServer(private val api: MontoyaApi, private val port: Int = 8089) {
             targetRoutes(targetService)
             decoderRoutes(decoderService)
             configRoutes(configService)
+            sessionRoutes(sessionService)
+            securityScanRoutes(securityScanService)
+            utilsRoutes(utilsService)
+            if (historyDao != null && sitemapDao != null) {
+                historyRoutes(historyDao, sitemapDao, repeaterService)
+            }
         }
     }
 }

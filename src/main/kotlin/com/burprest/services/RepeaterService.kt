@@ -2,9 +2,15 @@ package com.burprest.services
 
 import burp.api.montoya.MontoyaApi
 import burp.api.montoya.http.message.requests.HttpRequest
+import com.burprest.db.HistoryDao
+import com.burprest.db.SitemapDao
 import com.burprest.models.*
 
-class RepeaterService(private val api: MontoyaApi) {
+class RepeaterService(
+    private val api: MontoyaApi,
+    private val historyDao: HistoryDao? = null,
+    private val sitemapDao: SitemapDao? = null,
+) {
 
     fun send(request: SendRequest): SendResponse {
         val httpRequest = resolveRequest(request)
@@ -14,17 +20,36 @@ class RepeaterService(private val api: MontoyaApi) {
         val duration = System.currentTimeMillis() - start
 
         val resp = httpResponse.response()
+        val reqHeaders = httpRequest.headers().map { HttpHeader(it.name(), it.value()) }
+        val resHeaders = resp.headers().map { HttpHeader(it.name(), it.value()) }
+        val reqBody = if (httpRequest.body().length() > 0) httpRequest.bodyToString() else null
+        val resBody = if (resp.body().length() > 0) resp.bodyToString() else null
+
+        // Record to history
+        historyDao?.insert(
+            source = "repeater",
+            method = httpRequest.method(),
+            url = httpRequest.url(),
+            reqHeaders = reqHeaders,
+            reqBody = reqBody,
+            statusCode = resp.statusCode().toInt(),
+            resHeaders = resHeaders,
+            resBody = resBody,
+            durationMs = duration,
+        )
+        sitemapDao?.upsert(httpRequest.url(), httpRequest.method())
+
         return SendResponse(
             request = HttpRequestData(
                 method = httpRequest.method(),
                 url = httpRequest.url(),
-                headers = httpRequest.headers().map { HttpHeader(it.name(), it.value()) },
-                body = if (httpRequest.body().length() > 0) httpRequest.bodyToString() else null,
+                headers = reqHeaders,
+                body = reqBody,
             ),
             response = HttpResponseData(
                 statusCode = resp.statusCode().toInt(),
-                headers = resp.headers().map { HttpHeader(it.name(), it.value()) },
-                body = if (resp.body().length() > 0) resp.bodyToString() else null,
+                headers = resHeaders,
+                body = resBody,
             ),
             durationMs = duration,
         )

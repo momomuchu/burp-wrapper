@@ -28,7 +28,9 @@ fun Route.intruderRoutes(service: IntruderService) {
 
         get("/attack/{id}/results") {
             val id = call.parameters["id"]!!
-            call.respond(ApiResponse.ok(service.attackResults(id)))
+            val offset = call.request.queryParameters["offset"]?.toIntOrNull() ?: 0
+            val limit = call.request.queryParameters["limit"]?.toIntOrNull() ?: 0
+            call.respond(ApiResponse.ok(service.attackResults(id, offset, limit)))
         }
 
         post("/attack/{id}/pause") {
