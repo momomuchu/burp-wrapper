@@ -8,8 +8,10 @@ Selectors: ``header:NAME`` ``cookie:NAME`` ``body:FIELD`` ``query:NAME`` ``path:
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator
+from collections.abc import Callable
 from dataclasses import dataclass
+
+from bp.rawhttp import body_start, content_type, iter_headers, request_target_span
 
 
 @dataclass(frozen=True)
@@ -29,6 +31,9 @@ class PosError(Exception):
         self.code = code
 
 
+Resolver = Callable[[bytes, str, str], Position]
+
+
 def resolve_pos(raw: bytes, selector: str) -> Position:
     """Resolve ``selector`` against ``raw`` → Position. Raises PosError on failure."""
     kind, sep, arg = selector.partition(":")
@@ -38,84 +43,6 @@ def resolve_pos(raw: bytes, selector: str) -> Position:
     if resolver is None:
         raise PosError("BAD_SELECTOR", f"unknown selector kind {kind!r}")
     return resolver(raw, arg, selector)
-
-
-# --- structural parsing -------------------------------------------------------
-
-
-def _line_end(raw: bytes, start: int, limit: int) -> tuple[int, int]:
-    """Return (line_end_index, newline_len) for the line at ``start`` within ``limit``."""
-    i = raw.find(b"\r\n", start, limit)
-    if i != -1:
-        return i, 2
-    i = raw.find(b"\n", start, limit)
-    if i != -1:
-        return i, 1
-    return limit, 0
-
-
-def _request_target_span(raw: bytes) -> tuple[int, int]:
-    """Byte span of the request-target (2nd token of the request line)."""
-    line_end, _ = _line_end(raw, 0, len(raw))
-    sp1 = raw.find(b" ", 0, line_end)
-    if sp1 == -1:
-        raise PosError("BAD_SELECTOR", "malformed request line")
-    sp2 = raw.find(b" ", sp1 + 1, line_end)
-    if sp2 == -1:
-        raise PosError("BAD_SELECTOR", "malformed request line")
-    return sp1 + 1, sp2
-
-
-def _header_region(raw: bytes) -> tuple[int, int]:
-    """Byte span covering the header lines (after the request line, before blank line)."""
-    line_end, nl = _line_end(raw, 0, len(raw))
-    start = line_end + nl
-    b = raw.find(b"\r\n\r\n")
-    if b != -1:
-        return start, b
-    b = raw.find(b"\n\n")
-    if b != -1:
-        return start, b
-    return start, len(raw)
-
-
-def _iter_headers(raw: bytes) -> Iterator[tuple[bytes, int, int]]:
-    """Yield (name, value_start, value_end) for each header (value OWS-trimmed)."""
-    start, end = _header_region(raw)
-    i = start
-    while i < end:
-        line_end, nl = _line_end(raw, i, end)
-        colon = raw.find(b":", i, line_end)
-        if colon != -1:
-            name = raw[i:colon]
-            v_start = colon + 1
-            while v_start < line_end and raw[v_start] in (0x20, 0x09):
-                v_start += 1
-            v_end = line_end
-            while v_end > v_start and raw[v_end - 1] in (0x20, 0x09):
-                v_end -= 1
-            yield name, v_start, v_end
-        i = line_end + nl if nl else end
-
-
-def _body_start(raw: bytes) -> int:
-    b = raw.find(b"\r\n\r\n")
-    if b != -1:
-        return b + 4
-    b = raw.find(b"\n\n")
-    if b != -1:
-        return b + 2
-    return len(raw)
-
-
-def _content_type(raw: bytes) -> bytes:
-    for name, v_start, v_end in _iter_headers(raw):
-        if name.lower() == b"content-type":
-            return raw[v_start:v_end].lower()
-    return b""
-
-
-# --- per-selector resolvers ---------------------------------------------------
 
 
 def _resolve_offset(raw: bytes, arg: str, selector: str) -> Position:
@@ -133,7 +60,7 @@ def _resolve_offset(raw: bytes, arg: str, selector: str) -> Position:
 
 def _resolve_header(raw: bytes, arg: str, selector: str) -> Position:
     want = arg.lower().encode()
-    for name, v_start, v_end in _iter_headers(raw):
+    for name, v_start, v_end in iter_headers(raw):
         if name.lower() == want:
             return Position(v_start, v_end, selector)
     raise PosError("POS_NOT_FOUND", f"header {arg!r} not found")
@@ -141,7 +68,7 @@ def _resolve_header(raw: bytes, arg: str, selector: str) -> Position:
 
 def _resolve_cookie(raw: bytes, arg: str, selector: str) -> Position:
     key = arg.encode()
-    for name, v_start, v_end in _iter_headers(raw):
+    for name, v_start, v_end in iter_headers(raw):
         if name.lower() != b"cookie":
             continue
         val = raw[v_start:v_end]
@@ -164,7 +91,7 @@ def _resolve_cookie(raw: bytes, arg: str, selector: str) -> Position:
 
 
 def _resolve_query(raw: bytes, arg: str, selector: str) -> Position:
-    t_start, t_end = _request_target_span(raw)
+    t_start, t_end = request_target_span(raw)
     target = raw[t_start:t_end]
     q = target.find(b"?")
     if q == -1:
@@ -189,7 +116,7 @@ def _resolve_path(raw: bytes, arg: str, selector: str) -> Position:
         idx = int(arg)
     except ValueError:
         raise PosError("BAD_SELECTOR", f"path index must be int, got {arg!r}") from None
-    t_start, t_end = _request_target_span(raw)
+    t_start, t_end = request_target_span(raw)
     target = raw[t_start:t_end]
     q = target.find(b"?")
     path = target[: q if q != -1 else len(target)]
@@ -211,8 +138,8 @@ def _resolve_path(raw: bytes, arg: str, selector: str) -> Position:
 
 
 def _resolve_body(raw: bytes, arg: str, selector: str) -> Position:
-    ct = _content_type(raw)
-    b0 = _body_start(raw)
+    ct = content_type(raw)
+    b0 = body_start(raw)
     body = raw[b0:]
     if b"application/json" in ct:
         return _resolve_json(body, b0, arg, selector)
@@ -255,7 +182,7 @@ def _resolve_form(body: bytes, b0: int, field: str, selector: str) -> Position:
     raise PosError("POS_NOT_FOUND", f"form field {field!r} not found")
 
 
-_RESOLVERS: dict[str, "Resolver"] = {
+_RESOLVERS: dict[str, Resolver] = {
     "offset": _resolve_offset,
     "header": _resolve_header,
     "cookie": _resolve_cookie,
@@ -263,8 +190,3 @@ _RESOLVERS: dict[str, "Resolver"] = {
     "path": _resolve_path,
     "body": _resolve_body,
 }
-
-# Defined after the functions so the annotation resolves cleanly under strict mypy.
-from collections.abc import Callable  # noqa: E402
-
-Resolver = Callable[[bytes, str, str], Position]
