@@ -9,6 +9,9 @@ dependencies = [
     "pydantic>=2.7",
 ]
 
+[project.scripts]
+bp = "bp.cli:app"
+
 [dependency-groups]
 dev = [
     "pytest>=8",
