@@ -132,13 +132,16 @@ def load(
         return _DEFAULTS[key]
 
     def _resolve_bool(key: str, flag_val: bool | None, env_key: str, invert: bool = False) -> bool:
+        # ``invert`` applies ONLY to the negatively-named env var (e.g. BP_NO_LEDGER=1 -> off).
+        # The config-file key and the built-in default are positive-sense and read literally;
+        # inverting them silently flipped ``ledger=on`` to disabled (regression test in test_ledger).
         if flag_val is not None:
             return flag_val
         ev = os.environ.get(env_key)
         if ev is not None:
             return _to_bool_inv(ev) if invert else _to_bool(ev)
         if key in file_vals:
-            return not _to_bool(file_vals[key]) if invert else _to_bool(file_vals[key])
+            return _to_bool(file_vals[key])
         return _to_bool(_DEFAULTS[key])
 
     def _resolve_int(key: str, flag_val: int | None, env_key: str) -> int:

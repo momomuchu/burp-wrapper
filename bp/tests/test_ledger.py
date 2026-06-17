@@ -7,9 +7,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import httpx
 import pytest
 
-from bp.config import BpConfig, load, redact
+from bp.client import BurpClient
+from bp.config import load, redact
 from bp.ledger import Ledger, OpRecord, QueryFilters
 
 
@@ -201,17 +203,35 @@ def test_filter_limit(tmp_ledger: Ledger) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_no_ledger_suppression(tmp_path: Path) -> None:
-    """Simulate --no-ledger: caller must check cfg.ledger before calling record()."""
-    db_path = tmp_path / "ledger.db"
-    with Ledger(db_path=db_path) as ledger:
-        # Simulates what obs.py does: skip record() when ledger is disabled
-        cfg = BpConfig(ledger=False)
-        if cfg.ledger:
-            ledger.record(OpRecord(status="ok"))
+def _mock_health_client(ledger: Ledger | None) -> BurpClient:
+    """A BurpClient wired to a MockTransport that returns a valid /health envelope."""
 
-        rows = ledger.query()
-    assert len(rows) == 0, "No rows should be inserted when ledger=False"
+    def handler(_req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"success": True, "data": {"status": "ok"}, "error": None})
+
+    return BurpClient(
+        client=httpx.Client(transport=httpx.MockTransport(handler), base_url="http://test"),
+        ledger=ledger,
+    )
+
+
+def test_ledger_suppressed_when_client_ledger_is_none() -> None:
+    """The real --no-ledger path: BurpClient(ledger=None) records nothing (client.py:80 guard).
+
+    Exercises the ``if self._ledger is None: return`` short-circuit; the op must still succeed.
+    The previous version of this test put the guard inside the test body, so record() never ran
+    and the assertion was trivially true regardless of production code.
+    """
+    with _mock_health_client(None) as client:
+        client.get("/health")  # must not raise
+
+
+def test_ledger_records_one_row_when_enabled(tmp_path: Path) -> None:
+    """Positive control: with a Ledger attached, exactly one row is written per op."""
+    with Ledger(db_path=tmp_path / "ledger.db") as ledger:
+        with _mock_health_client(ledger) as client:
+            client.get("/health")
+        assert len(ledger.query()) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -293,6 +313,30 @@ def test_bp_no_ledger_zero_keeps_ledger(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setenv("BP_NO_LEDGER", "0")
     cfg = load(config_path=Path("/nonexistent/path/config"))
     assert cfg.ledger is True
+
+
+def test_file_ledger_on_keeps_ledger_enabled(tmp_path: Path) -> None:
+    """Regression: positive-sense ``ledger=on`` in the config FILE must ENABLE the ledger.
+
+    The invert flag exists only for the negatively-named BP_NO_LEDGER env var; it must not
+    invert the positively-named ``ledger`` config-file key (which silently disabled it).
+    """
+    config_file = tmp_path / "config"
+    config_file.write_text("ledger = on\n", encoding="utf-8")
+    assert load(config_path=config_file).ledger is True
+
+
+def test_file_ledger_off_disables_ledger(tmp_path: Path) -> None:
+    config_file = tmp_path / "config"
+    config_file.write_text("ledger = off\n", encoding="utf-8")
+    assert load(config_path=config_file).ledger is False
+
+
+def test_file_redact_off_read_literally(tmp_path: Path) -> None:
+    """Guard: a positive-sense boolean file key (redact) is read literally, never inverted."""
+    config_file = tmp_path / "config"
+    config_file.write_text("redact = off\n", encoding="utf-8")
+    assert load(config_path=config_file).redact is False
 
 
 # ---------------------------------------------------------------------------
