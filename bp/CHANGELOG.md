@@ -2,6 +2,30 @@
 
 All notable changes to `bp`. Format: [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+Post-v1.0.0 fixes surfaced by an adversarial UltraQA / Goodhart audit (three-way verified).
+
+### Fixed
+- **Config-file `ledger=on` silently disabled the ledger.** The `invert` flag (for the
+  negatively-named `BP_NO_LEDGER` env var) was wrongly applied to the positive-sense config-file
+  key, so the documented default `ledger=on` turned recording OFF. `config.py` had no direct
+  tests — added.
+- **`--format <bad>` printed a Rich traceback and exited 1.** Now validated in the callback →
+  clean usage error (exit 2) before any server call.
+- **`--fields <unknown>` silently rendered `None` with exit 0.** Now a usage error (exit 2)
+  listing the valid fields, per OUTPUT.md §2.1.
+
+### Changed
+- De-duplicated header parsing (3 copies → shared `parse_header`/`parse_headers`; one had a
+  hardcoded exit code), the `obs` `log`/`tag` double-registration, the query/form key=value scan,
+  and the default-URL literal. Behaviour-preserving.
+- Docs aligned with shipped v1: exit-code table (0/1/2/3/4, sysexits mapping superseded),
+  TTY-aware default and several documented-but-unshipped surfaces marked `v1.1`, reserved config
+  fields (`enforce_scope`/`envelope`/`throttle_ms`/`anomaly_pct`) flagged parsed-but-not-wired.
+- Test suite: 112 → 124 (config-file booleans, cliutil chokepoint, header parsing; replaced a
+  tautological no-ledger test with real client-guard coverage).
+
 ## [1.0.0] — 2026-06-17
 
 First release. A fully-typed, spec-driven CLI client for the Burp REST extension on `:8089`.
