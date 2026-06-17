@@ -15,7 +15,7 @@
 1. Every `bp` command emits records (fuzz rows, history rows, issues, interactions…).
 2. `--format` picks the *shape*: `json` (agent), `table` (human), `raw` (Burp bytes), `quiet` (one value).
 3. `--fields` picks *which* columns and their order; `-w` builds a *custom line* from `%{tokens}`.
-4. Default format auto-detects: `table` on a terminal, `json` when piped or agent-driven.
+4. Default format is `table` for all streams in v1; pass `--format json` for agents/pipes. _(v1.1 — TTY-aware auto-detect not yet implemented)_
 5. Errors always go to **stderr** as one JSON object; data goes to **stdout**; exit code carries success/failure.
 6. Every shown record is also written to the **Run Ledger** (`~/.bp/`) unless `--no-ledger`.
 7. `bp fuzz ... -w '%{status} %{payload}'` prints ONLY the HTTP code + payload, one line per request.
@@ -54,6 +54,7 @@ Each requirement is tagged with the founder criticality scale: `[IMPORTANCE][BLO
 - **[HIGH][BLOCKS:high] A4 — Default format is context-aware.** `table` when stdout is a TTY;
   `json` when stdout is piped, redirected, or `BP_AGENT=1` is set. This is the single biggest
   AX-friendliness lever: an agent piping `bp` gets parseable JSON with zero flags.
+  _(v1.1 — not yet implemented; the current default is `table` for all streams — pass `--format json` for agents/pipes)_
 - **[HIGH][BLOCKS:none] A5 — Never dump full bodies by default.** Response bodies are summarized
   (preview-capped) unless the user explicitly asks (`--fields body` or `--format raw` on a single
   record). Token efficiency is a contract, not a courtesy (SPEC handoff: "summarise, don't dump").
@@ -76,10 +77,10 @@ When multiple output flags are combined, resolve in this exact order:
 ```
 
 - **[CRITICAL][BLOCKS:high] R-PREC** `-w` and `--quiet` are mutually exclusive with each other;
-  supplying both is a usage error (exit 64, stderr). `-w` + `--format` is *not* an error —
+  supplying both is a usage error (exit 2, stderr). `-w` + `--format` is *not* an error —
   `--format` is simply ignored for rows (it may still affect the ledger-disabled banner, which is
   stderr anyway).
-- `--fields` with `--format raw` is a usage error (raw has no columns) → exit 64.
+- `--fields` with `--format raw` is a usage error (raw has no columns) → exit 2.
 
 ---
 
@@ -135,7 +136,7 @@ INDEX  PAYLOAD      STATUS  LENGTH  TIME  CONTENTTYPE        ANOMALOUS
   artifact: `bp repeater send` (the raw response), `bp history get <id>` (raw req+resp),
   `bp proxy history get <id>` (raw), `bp fuzz results <id> --index N` (that one response's raw bytes).
 - **[HIGH][BLOCKS:low] R-RAW-SINGLE** `raw` requires a **single** record in scope. On a multi-record
-  command without an index selector, `raw` is a usage error (exit 64, stderr message: *"raw requires
+  command without an index selector, `raw` is a usage error (exit 2, stderr message: *"raw requires
   a single record; add --index N or use --format json"*). Rationale: concatenated raw HTTP streams
   are ambiguous to parse.
 - When both request and response exist, they are separated by a single line containing exactly
@@ -194,7 +195,7 @@ $ bp fuzz results a1b2c3d4 --format quiet
   **in what order** for `json` and `table`. The given order is honored exactly (overrides catalog
   default order for display; the *stable* catalog order still defines the canonical schema when
   `--fields` is absent — A3).
-- Unknown field name → usage error (exit 64, stderr lists valid fields). Case-insensitive match,
+- Unknown field name → usage error (exit 2, stderr lists valid fields). Case-insensitive match,
   canonical-cased on output.
 - `--fields all` selects the full catalog in catalog order. `--fields '*'` is a synonym.
 - Field names are **stable identifiers** (camelCase, matching the Kotlin contract SPEC §8 where a
@@ -246,7 +247,7 @@ Default fields: `id,method,status,host,url,length`.
 
 > **[HIGH][BLOCKS:high] R-HIST-404** This family 404s entirely if the SQLite DB failed to init
 > (SPEC §6.13). `bp` detects the 404 and prints to **stderr**: *"history unavailable: extension DB
-> not initialized"* and exits **69** (EX_UNAVAILABLE). It does NOT emit an empty success.
+> not initialized"* and exits **1** (generic error). It does NOT emit an empty success.
 
 | Field | Type | Source | Notes |
 |---|---|---|---|
@@ -281,7 +282,7 @@ Default fields: `severity,confidence,name,url`. Sorted by severity rank (HIGH→
 #### 2.2.5 · `bp collaborator poll` / `new` (`Interaction`, SPEC §6.5)
 
 > **[HIGH][BLOCKS:high] R-COLLAB-PRO** Pro-only. On Community / unconfigured → server 503. `bp`
-> prints to **stderr**: *"collaborator requires Burp Suite Professional"* and exits **69**.
+> prints to **stderr**: *"collaborator requires Burp Suite Professional"* and exits **4** (PRO_REQUIRED).
 
 | Field | Type | Source | Notes |
 |---|---|---|---|
@@ -370,7 +371,7 @@ columns. `-w` owns stdout (R-PREC).
   The core 11 tokens above are guaranteed on **every** family (resolving to empty where the family
   lacks them). This keeps the headline contract universal while letting power users reach any field.
 - **[MEDIUM][BLOCKS:none] R-WUNKNOWN** An unknown token (not core, not a catalog field) is a usage
-  error (exit 64) — fail loud, do not silently emit the literal `%{...}`. Rationale: a silent
+  error (exit 2) — fail loud, do not silently emit the literal `%{...}`. Rationale: a silent
   passthrough hides agent typos.
 
 ### 3.3 · Escaping & literals
@@ -425,10 +426,11 @@ the default when piped (A4).
 
 ### 4.1 · Activation
 
-- **[CRITICAL][BLOCKS:high] AX-ACTIVATE** Agent mode is active when ANY of: stdout is not a TTY
-  (piped/redirected), `BP_AGENT=1` in env, or `--format json` explicit. In agent mode the default
-  format is `json` and human niceties (color, spinners, progress bars) are **fully suppressed**
-  (they would corrupt stdout *and* stderr parsing).
+- **[CRITICAL][BLOCKS:high] AX-ACTIVATE** Agent mode is active when ANY of: `BP_AGENT=1` in env,
+  or `--format json` explicit. _(v1.1 — TTY-detection trigger not yet implemented; until then, always
+  pass `--format json` explicitly for agent/pipe use.)_ In agent mode the default format is `json`
+  and human niceties (color, spinners, progress bars) are **fully suppressed** (they would corrupt
+  stdout *and* stderr parsing).
 
 ### 4.2 · The stable schema guarantee
 
@@ -467,7 +469,7 @@ the default when piped (A4).
 ### 4.4 · How an agent parses `bp` (recommended contract)
 
 ```
-1. Run with stdout piped (auto-json) OR pass --format json.
+1. Pass --format json (v1 does not auto-detect pipes; TTY-aware default is v1.1).
 2. Read stdout line by line; json.loads(line) → one record. Stop early if satisfied.
 3. On empty stdout + exit 0 → zero records (valid empty result).
 4. On exit ≠ 0 → read the SINGLE json object on stderr: {"error":{"code":..,"message":..}} (§5).
@@ -477,7 +479,7 @@ the default when piped (A4).
 
 - **[HIGH][BLOCKS:high] AX-STDERR-JSON** In agent mode, **errors on stderr are also JSON** (single
   object, §5) — so an agent has one parser for both streams. In human mode, stderr errors are plain
-  prose. Detection: same A4 rule.
+  prose. Detection: `BP_AGENT=1` or explicit `--format json` (A4; TTY-detection not yet in v1).
 
 ### 4.5 · Determinism for agents
 
@@ -511,20 +513,17 @@ the default when piped (A4).
 
 ### 5.3 · Exit code table
 
-- **[CRITICAL][BLOCKS:high] E-EXIT** Exit codes follow `sysexits.h` so shells and agents branch
-  reliably:
+- **[CRITICAL][BLOCKS:high] E-EXIT** Exit codes are the shipped set, defined in `CLI.md §Output`
+  and implemented in `cliutil.py`. The earlier `sysexits.h` mapping (codes 64/65/68/69/70/76) was
+  superseded — agents and scripts must branch on the table below, not on `sysexits` values.
 
 | Exit | Meaning | When |
 |---|---|---|
 | `0` | success | request ok (even if 0 records, even if HTTP 4xx/5xx *target* response — see E-TARGET) |
-| `1` | generic failure | uncategorized `bp` error |
-| `2` | anomaly found | **opt-in** via `--fail-on-anomalous`: ≥1 anomalous fuzz result (scripting gate) |
-| `64` | usage error (EX_USAGE) | bad flag combo, unknown field/token, `-w`+`--quiet` |
-| `65` | data error (EX_DATAERR) | malformed response that can't be parsed against the schema |
-| `69` | unavailable (EX_UNAVAILABLE) | Pro required (collaborator/scanner), history DB 404, service 503 |
-| `68` | host error (EX_NOHOST) / conn refused | `:8089` not listening — Burp/extension down |
-| `70` | internal (EX_SOFTWARE) | server `INTERNAL_ERROR` 500 |
-| `76` | protocol (EX_PROTOCOL) | server `INVALID_REQUEST`/`INVALID_PARAM` 400 from a `bp`-built request |
+| `1` | generic error | uncategorized `bp` error |
+| `2` | usage error | bad flag combo, unknown field/token |
+| `3` | `CONNECTION_REFUSED` | `:8089` not listening — Burp/extension down |
+| `4` | `PRO_REQUIRED` | Pro-only feature (collaborator, scanner start) used on Community |
 
 - **[HIGH][BLOCKS:high] E-TARGET** Critical distinction: a **target** HTTP 403/500 (the thing you
   fuzzed responded 500) is a **successful `bp` operation** → exit `0`, `status:500` in the record.
@@ -604,14 +603,14 @@ the default when piped (A4).
 - [CRITICAL][BLOCKS:high] A3 — stable agent schema, additive evolution only.
 - [CRITICAL][BLOCKS:high] F-QUIET — single essential value per family.
 - [CRITICAL][BLOCKS:high] R-WTOK — full 11-token `-w` grammar incl. the founder headline.
-- [CRITICAL][BLOCKS:high] E-EXIT / E-TARGET — sysexits codes; target HTTP status ≠ exit code.
+- [CRITICAL][BLOCKS:high] E-EXIT / E-TARGET — shipped exit codes (0/1/2/3/4); target HTTP status ≠ exit code.
 - [CRITICAL][BLOCKS:high] AX-ACTIVATE — agent mode = non-TTY/BP_AGENT/explicit json.
 
 ### HIGH
 
-- [HIGH][BLOCKS:high] A4 — context-aware default format (table TTY / json piped).
+- [HIGH][BLOCKS:high] A4 — context-aware default format (table TTY / json piped) _(v1.1 — not yet implemented; default is `table` for all streams)_.
 - [HIGH][BLOCKS:high] AX-CAP-ROWS / AX-CAP-BODY — anti-dump caps (50 rows, 256-byte preview).
-- [HIGH][BLOCKS:high] R-HIST-404 / R-COLLAB-PRO — degrade gracefully, exit 69, stderr.
+- [HIGH][BLOCKS:high] R-HIST-404 / R-COLLAB-PRO — degrade gracefully, exit 1 (R-HIST-404) / exit 4 PRO_REQUIRED (R-COLLAB-PRO), stderr.
 - [HIGH][BLOCKS:high] E-TARGET — exit code reflects bp+Burp, not target response.
 - [HIGH][BLOCKS:low] F-TABLE / F-RAW / R-RAW-SINGLE — human + raw-bytes shapes.
 - [HIGH][BLOCKS:low] R-WESC / R-WSAFE — escaping + control-byte safety in `-w`.

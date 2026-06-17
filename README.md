@@ -10,7 +10,7 @@ Drive **Burp Suite** from the command line. Two components in this repo:
    `http://127.0.0.1:8089`. The backend `bp` talks to (you can also `curl` it directly).
 
 ```
- you / AI agent ──►  bp (CLI)  ──REST :8089──►  burp-rest-extension  ──Montoya──►  Burp Suite Pro
+ you / AI agent ──►  bp (CLI)  ──REST :8089──►  burp-rest-extension  ──Montoya──►  Burp Suite (Pro/Community)
 ```
 
 ## Quickstart
@@ -35,14 +35,13 @@ bp proxy --host target.example --limit 20       # captured history → request i
 bp fuzz 42 --pos 'header:X-Forwarded-For' --payloads X-Forwarded-For=ssrf.txt \
            --pos 'cookie:role'            --payloads role=privesc.txt \
            --type cluster-bomb --anomalous-only
-
-bp collab new                                   # OOB payload (blind SSRF/RCE) — Pro
-bp scan all https://target.example              # crawl + audit — Pro
-bp encode 'a:b' --enc base64                    # offline decoder
-bp log --tag recon                              # query the Run Ledger
 ```
 
-Full CLI guide: **[`bp/README.md`](bp/README.md)**.
+…plus `collab` (OOB — Pro), `scan` (crawl+audit — Pro), `encode/decode/hash`, `scope`, and
+`log` (the Run Ledger). Full, canonical command set: **[`bp/README.md`](bp/README.md)**.
+
+> Global flags (`--url`/`--format`/`--fields`) go **before** the subcommand, e.g.
+> `bp --format json proxy`. Default output is `table`; pass `--format json` for agents/pipes.
 
 ## What's where
 
@@ -58,14 +57,15 @@ Full CLI guide: **[`bp/README.md`](bp/README.md)**.
 
 ## Requirements
 
-- **Burp Suite Pro** (Community works for non-Pro features; `bp` degrades gracefully).
+- **Burp Suite** — Pro or Community. Only `collab` and `scan` start need Pro (they exit `4` with a
+  clear message on Community); every other group works on Community.
 - **JDK 17+** to build the extension · **Python 3.11+** for `bp`.
 
 ## Build & test
 
 ```bash
 ./gradlew shadowJar          # extension fat JAR
-cd bp && uv run pytest -q && uv run mypy && uv run ruff check   # bp: 112 tests, typed, lint
+cd bp && uv run pytest -q && uv run mypy && uv run ruff check   # bp: 124 tests, typed, lint
 ```
 
 ## License

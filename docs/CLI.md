@@ -17,12 +17,14 @@
 | Flag | Role | Default |
 |---|---|---|
 | `--url U` | Burp REST base URL | `$BURP_REST_URL` or `http://127.0.0.1:8089` |
-| `--format json\|table\|raw\|quiet` | rendering | `table` if TTY, otherwise `json` |
+| `--format json\|table\|raw\|quiet` | rendering | `table` (all streams in v1; TTY-aware default is v1.1 — pass `--format json` for agents/pipes) |
 | `--fields a,b,c` | column selection/order | all |
-| `-w, --write-out 'TPL'` | curl-style template (`%{status} %{payload}`…) | — |
-| `--tag NAME` | tags the operation in the Run Ledger | — |
-| `--no-ledger` | do not record the operation | (records by default) |
+| `-w, --write-out 'TPL'` | curl-style template (`%{status} %{payload}`…) | — _(v1.1 — flag not shipped; `-w`/`--write-out` not available in v1)_ |
+| `--tag NAME` | tags the operation in the Run Ledger | — _(v1.1 — flag not shipped; tag column exists in ledger schema but the CLI flag is not wired)_ |
+| `--no-ledger` | do not record the operation | _(v1.1 — flag not shipped; for no-ledger use env `BP_NO_LEDGER=1`)_ |
 | `-h, --help` | help | — |
+
+> **NOTE — global flag placement:** Global flags (`--url`/`--format`/`--fields`) must be placed BEFORE the subcommand — e.g. `bp --format json health`, not `bp health --format json`.
 
 ## `--pos` grammar (fuzzing)  `[CRITICAL][BLOCKS:high]`
 
@@ -46,15 +48,15 @@ header:NAME   cookie:NAME   body:FIELD   query:NAME   path:INDEX   offset:START-
 | `bp ws` | `GET /proxy/websocket/history` | proxy |
 | `bp intercept on\|off\|forward\|drop` | `POST /proxy/intercept/*` | proxy |
 | `bp send <id> [--set-header 'N: V']… [--body @f\|STR] [--method M] [--path P]` | `POST /repeater/send` | repeater |
-| `bp send --batch @file` | `POST /repeater/send/batch` | repeater |
+| `bp send --batch @file` | `POST /repeater/send/batch` | repeater | _(v1.1 — not shipped)_ |
 | `bp tab <id>` | `POST /repeater/tab/create` | repeater |
 | `bp fuzz <id> --pos SEL… [--payloads N=F]… [--type T] [--throttle-ms N] [--anomalous-only]` | client-side fire via `POST /repeater/send` (v1: synchronous) | intruder |
-| `bp fuzz <id> --param NAME --payloads @f` | `POST /intruder/quick-fuzz` (1-param shortcut) | intruder |
+| `bp fuzz <id> --param NAME --payloads @f` | `POST /intruder/quick-fuzz` (1-param shortcut) | intruder | _(v1.1 — not shipped)_ |
 | `bp fuzz status\|results\|pause\|resume\|stop <attackId>` _(v1.1 — async lifecycle, not shipped in v1)_ | `/intruder/attack/{id}/*` | intruder |
 | `bp collab new [--count N]` | `POST /collaborator/generate[/batch]` | collaborator (Pro) |
 | `bp collab poll [id]` | `GET /collaborator/poll[/{id}]` | collaborator (Pro) |
 | `bp scan crawl\|audit\|all <url>` | `POST /scanner/{crawl,audit,crawl-and-audit}` | scanner (Pro) |
-| `bp scan status\|issues\|pause\|resume\|stop <scanId>` · `bp scan defs` | `/scanner/{id}/*` · `/scanner/issue-definitions` | scanner (Pro) |
+| `bp scan status\|issues <scanId>` · `bp scan defs` | `/scanner/{id}/*` · `/scanner/issue-definitions` | scanner (Pro) _(pause\|resume\|stop: v1.1 — not shipped)_ |
 | `bp check auth\|idor\|headers\|cors\|endpoints <url>` | `POST /scan/*` | securityscan |
 | `bp scope show\|set\|add\|remove\|check [url]` | `GET/POST /target/scope*` | target |
 | `bp sitemap [prefix]` | `GET /target/sitemap` | target |
@@ -62,7 +64,7 @@ header:NAME   cookie:NAME   body:FIELD   query:NAME   path:INDEX   offset:START-
 | `bp config get\|set project\|user` · `bp ext` | `GET/PUT /config/*` · `GET /extensions` | config |
 | `bp session set\|get\|clear` · `bp session send` · `bp session cookies` | `/session/*` | session |
 | `bp diff A B` · `bp endpoints <data>` | `POST /utils/{diff,extract-endpoints}` | utils |
-| `bp history list [filters]` · `bp history get <id>` · `bp history sitemap` · `bp history replay <id>` · `bp history clear --confirm` | `/history/*` (conditional DB) | history |
+| `bp history list [--host --method --status --page]` · `bp history get <id>` · `bp history sitemap` · `bp history replay <id>` · `bp history clear --confirm` | `/history/*` (conditional DB) | history _(extra `list` filters --source/--search/--since/--until/--page-size: v1.1)_ |
 | `bp log [filters]` · `bp tag <opId> <name>` | Run Ledger (C4, local DB `~/.bp/`) | — observability |
 
 ## Naming decisions (resolve the audit)  `[HIGH][BLOCKS:high]`

@@ -9,7 +9,9 @@ Fully typed (Python 3.11+, `mypy --strict`), spec-driven (`docs/`), test-driven 
 
 ## Requirements
 
-- **Burp Suite Pro** with the `burp-rest-extension` JAR loaded (REST auto-starts on `:8089`).
+- **Burp Suite** (Pro or Community) with the `burp-rest-extension` JAR loaded (REST auto-starts
+  on `:8089`). Community works for every group except `collab` and `scan` start — those exit `4`
+  with a clear message on Community.
   Build it: `./gradlew shadowJar` → load `build/libs/burp-rest-extension.jar` in Burp.
 - **Python 3.11+**
 
@@ -53,7 +55,7 @@ Full grammar: [`docs/CLI.md`](../docs/CLI.md).
 
 - `--format json|table|raw|quiet`, `--fields a,b,c`, `--url` (or `BURP_REST_URL`).
 - **Run Ledger** ON by default (`~/.bp/ledger.db`): every op recorded with sha256
-  fingerprints (never raw bodies). `--no-ledger` to opt out; secrets redacted by default.
+  fingerprints (never raw bodies). `BP_NO_LEDGER=1` to opt out; secrets redacted by default.
 - Config precedence: flag > env > `~/.bp/config` > default. See [`docs/OUTPUT.md`](../docs/OUTPUT.md),
   [`docs/STATE-AND-CONFIG.md`](../docs/STATE-AND-CONFIG.md).
 
