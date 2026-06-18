@@ -21,10 +21,11 @@
 | `--fields a,b,c` | column selection/order | all |
 | `-w, --write-out 'TPL'` | curl-style template (`%{status} %{payload}`…) | — _(v1.1 — flag not shipped; `-w`/`--write-out` not available in v1)_ |
 | `--tag NAME` | tags the operation in the Run Ledger | — _(v1.1 — flag not shipped; tag column exists in ledger schema but the CLI flag is not wired)_ |
-| `--no-ledger` | do not record the operation | _(v1.1 — flag not shipped; for no-ledger use env `BP_NO_LEDGER=1`)_ |
+| `--no-ledger` | do not record this operation in the Run Ledger | off — **shipped** (ADR-0005); env equivalent `BP_NO_LEDGER=1` |
+| `--version` | print the bp CLI version and exit | — **shipped** |
 | `-h, --help` | help | — |
 
-> **NOTE — global flag placement:** Global flags (`--url`/`--format`/`--fields`) must be placed BEFORE the subcommand — e.g. `bp --format json health`, not `bp health --format json`.
+> **NOTE — global flag placement (ADR-0009):** `--url`/`--format`/`--fields`/`--no-ledger` now work in **either** position — `bp health --format json` and `bp --format json health` are equivalent (a small argv pre-processor hoists them ahead of the subcommand).
 
 ## `--pos` grammar (fuzzing)  `[CRITICAL][BLOCKS:high]`
 

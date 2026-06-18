@@ -60,11 +60,11 @@ agent_mode      = auto        # auto | on | off (NDJSON for AI agent, see OUTPUT
 
 **Equivalent flags** (per command): `--url`, `--enforce-scope`, `--envelope`, `--redact`, `--no-ledger`, `--throttle-ms`. Each flag overrides env+config for that invocation.
 
-> **Implementation status (v1).** Only `--url` exists as a flag, and only `redact` and `ledger`
-> are consumed at runtime (the chokepoint reads exactly those two). `enforce_scope`, `envelope`,
-> `throttle_ms`, `anomaly_pct` and the `--enforce-scope`/`--envelope`/`--redact`/`--no-ledger`/`--throttle-ms`
-> flags are **parsed but NOT yet wired** — they are reserved for v1.1. In v1, use the env vars
-> (`BP_NO_LEDGER=1`, `BP_REDACT=off`, …) for the knobs that are active. `agent_mode=auto` TTY
+> **Implementation status.** `--url`, `--no-ledger`, `--format`, `--fields` and `--version` are
+> wired flags; `redact` and `ledger` are consumed at runtime (the chokepoint reads exactly those
+> two knobs). `enforce_scope`, `envelope`, `throttle_ms`, `anomaly_pct` and the
+> `--enforce-scope`/`--envelope`/`--redact`/`--throttle-ms` flags are **parsed but NOT yet wired**
+> — reserved for v1.1; use the env vars (`BP_REDACT=off`, …) for those. `agent_mode=auto` TTY
 > detection is likewise v1.1 (default format is `table`; pass `--format json` for agents).
 
 **Guard semantics (non-blocking by default — ADR-0007):**
@@ -79,7 +79,7 @@ agent_mode      = auto        # auto | on | off (NDJSON for AI agent, see OUTPUT
 - Precedence: flag > env > config > default (4 levels, one test each). _(active in v1)_
 - `redact=on` → an `Authorization: Bearer X` does not appear in `ops.command` or in the output. _(active in v1)_
 - Ledger: an `ok` op inserts 1 row with a non-null `resp_sha256` and **no raw body** stored (without `--ledger-bodies`). _(active in v1)_
-- `BP_NO_LEDGER=1` (the v1 way; the `--no-ledger` flag is v1.1) → 0 rows inserted.
+- `BP_NO_LEDGER=1` **or** `--no-ledger` → 0 rows inserted.
 - _(v1.1, not yet implemented)_ `enforce_scope=warn` + out-of-scope target → fires **and** emits the warning (does not fail).
 - _(v1.1, not yet implemented)_ `enforce_scope=block` + out of scope → exit 4, does not fire.
 

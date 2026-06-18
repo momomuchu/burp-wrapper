@@ -26,6 +26,45 @@ Post-v1.0.0 fixes surfaced by an adversarial UltraQA / Goodhart audit (three-way
 - Test suite: 112 → 124 (config-file booleans, cliutil chokepoint, header parsing; replaced a
   tautological no-ledger test with real client-guard coverage).
 
+### Fixed — live UltraQA campaign (2026-06-19, against running Burp Pro on :8089)
+
+Found by actually driving `bp` against the live extension plus an adversarial 43-agent
+discovery sweep (34 defects confirmed, three-way verified). HIGH:
+
+- **`--format`/`--fields` only worked *before* the subcommand** — `bp health --format json`
+  exited 2 "No such option". A conservative argv pre-processor makes the global value-options
+  (and `--no-ledger`) position-tolerant (ADR-0009).
+- **`BP_REDACT=` (empty) or a config-file typo silently disabled secret redaction.** An empty
+  env var is now treated as unset and an unrecognised boolean token keeps the safe default —
+  a security control can no longer be turned off by a shell accident.
+- **`--pos` resolver mistargeted** cookies present only in a *later* `Cookie` header, and JSON
+  string values containing a backslash-escaped quote (silent wrong-bytes fuzz).
+- **Non-`ConnectError` transport failures** (read/connect timeouts) escaped as raw tracebacks;
+  a **non-JSON / empty-body server response** mapped to exit 2 (usage) instead of exit 1. Both
+  are now typed errors → exit 3 / exit 1, each recorded to the ledger.
+- **`--no-ledger` is now a real flag** (ADR-0005; previously env-only `BP_NO_LEDGER=1`).
+
+MED and other:
+
+- **Run Ledger `exit_code` was always NULL** — now back-filled per op once the command resolves.
+- **Table output leaked Python `repr`** (`None`, `{'k': 'v'}`) — now blank cell / compact JSON.
+- **`bp --version`** added (was "No such option"; `bp version` still reports the extension).
+- **Fuzz with zero positions** silently fired N unmodified requests — now rejected (usage error).
+- **`bp tag` exited 0 when the ledger was disabled** (tag never applied) — now exit 1.
+
+### Known / deferred (not yet fixed)
+
+- **Burp Kotlin extension (server-side; needs extension rebuild + reload):** `burpVersion`
+  always null; `bp history list --page <negative>` leaks a JDBC exception; `decode` of
+  unclassifiable input surfaces the internal `plain` encoding name; a bad `hash --algo` leaks a
+  JVM `NoSuchAlgorithmException`. Grouped for a dedicated extension pass.
+- **`bp show <opId>` replay** (ADR-0005) and the `program`/`req_ref`/`resp_ref` ledger columns
+  remain v1.1 (refs require `--ledger-bodies`).
+- Low-severity help-text cosmetics (e.g. `collab poll` parameter name, `diff` example wrap).
+
+- Test suite: 124 → 158 (config security, argv hoist + `--version` + `--no-ledger`, `--pos`
+  edge cases, client transport + non-JSON, ledger `exit_code`, fuzz zero-position, obs tag).
+
 ## [1.0.0] — 2026-06-17
 
 First release. A fully-typed, spec-driven CLI client for the Burp REST extension on `:8089`.
