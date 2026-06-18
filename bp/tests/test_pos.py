@@ -55,3 +55,46 @@ def test_resolve_pos_not_found() -> None:
 def test_unsupported_selector_kind() -> None:
     with pytest.raises(PosError):
         resolve_pos(REQ, "bogus:thing")
+
+
+# --- discovery UltraQA: resolver correctness edge cases ---
+
+
+def test_cookie_found_in_second_cookie_header() -> None:
+    """HIGH: a cookie present only in a later Cookie header must still be found."""
+    req = b"GET / HTTP/1.1\r\nCookie: a=1\r\nCookie: target=found\r\n\r\n"
+    p = resolve_pos(req, "cookie:target")
+    assert req[p.start : p.end] == b"found"
+
+
+def test_cookie_absent_in_all_headers_raises_not_found() -> None:
+    req = b"GET / HTTP/1.1\r\nCookie: a=1\r\nCookie: b=2\r\n\r\n"
+    with pytest.raises(PosError) as ei:
+        resolve_pos(req, "cookie:missing")
+    assert ei.value.code == "POS_NOT_FOUND"
+
+
+def test_json_value_with_escaped_quote_spans_full_value() -> None:
+    r"""HIGH: a JSON string value containing \" must not be truncated at the escaped quote."""
+    body = b'{"key":"ab\\"cd"}'
+    req = b"POST /api HTTP/1.1\r\nContent-Type: application/json\r\n\r\n" + body
+    p = resolve_pos(req, "body:key")
+    assert req[p.start : p.end] == b'ab\\"cd'
+
+
+def test_reversed_offset_is_bad_selector() -> None:
+    with pytest.raises(PosError) as ei:
+        resolve_pos(REQ, "offset:5-3")
+    assert ei.value.code == "BAD_SELECTOR"
+
+
+def test_negative_offset_is_bad_selector() -> None:
+    with pytest.raises(PosError) as ei:
+        resolve_pos(REQ, "offset:0--5")
+    assert ei.value.code == "BAD_SELECTOR"
+
+
+def test_offset_beyond_length_is_pos_not_found() -> None:
+    with pytest.raises(PosError) as ei:
+        resolve_pos(REQ, "offset:0-99999")
+    assert ei.value.code == "POS_NOT_FOUND"

@@ -53,7 +53,9 @@ def _resolve_offset(raw: bytes, arg: str, selector: str) -> Position:
         a, b = int(a_str), int(b_str)
     except ValueError:
         raise PosError("BAD_SELECTOR", f"offset must be integers, got {arg!r}") from None
-    if not 0 <= a < b <= len(raw):
+    if a < 0 or b < 0 or a >= b:
+        raise PosError("BAD_SELECTOR", f"offset {a}-{b} is not a valid range")
+    if b > len(raw):
         raise PosError("POS_NOT_FOUND", f"offset {a}-{b} out of range (len {len(raw)})")
     return Position(a, b, selector)
 
@@ -68,9 +70,11 @@ def _resolve_header(raw: bytes, arg: str, selector: str) -> Position:
 
 def _resolve_cookie(raw: bytes, arg: str, selector: str) -> Position:
     key = arg.encode()
+    seen_cookie = False
     for name, v_start, v_end in iter_headers(raw):
         if name.lower() != b"cookie":
             continue
+        seen_cookie = True
         val = raw[v_start:v_end]
         pos = 0
         while pos <= len(val):
@@ -86,6 +90,8 @@ def _resolve_cookie(raw: bytes, arg: str, selector: str) -> Position:
             if semi == -1:
                 break
             pos = semi + 1
+        # key not in this Cookie header — keep scanning any subsequent Cookie headers
+    if seen_cookie:
         raise PosError("POS_NOT_FOUND", f"cookie {arg!r} not found")
     raise PosError("POS_NOT_FOUND", "no Cookie header")
 
@@ -166,10 +172,16 @@ def _resolve_json(body: bytes, b0: int, field: str, selector: str) -> Position:
         raise PosError("POS_NOT_FOUND", f'json key "{field}" not found')
     v0 = m.end()
     if v0 < len(body) and body[v0] == 0x22:  # '"' → string value
-        end = body.find(b'"', v0 + 1)
-        if end == -1:
-            raise PosError("POS_NOT_FOUND", "unterminated json string")
-        return Position(b0 + v0 + 1, b0 + end, selector)
+        j = v0 + 1
+        while j < len(body):
+            c = body[j]
+            if c == 0x5C:  # backslash → skip the escaped char (handles \" inside the value)
+                j += 2
+                continue
+            if c == 0x22:  # unescaped closing quote
+                return Position(b0 + v0 + 1, b0 + j, selector)
+            j += 1
+        raise PosError("POS_NOT_FOUND", "unterminated json string")
     j = v0  # literal value
     terminators = (0x2C, 0x7D, 0x5D, 0x20, 0x0D, 0x0A, 0x09)  # , } ] sp cr lf tab
     while j < len(body) and body[j] not in terminators:
