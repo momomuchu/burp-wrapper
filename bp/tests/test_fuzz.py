@@ -76,3 +76,16 @@ def test_returns_concrete_requests() -> None:
     pu, pp = _positions()
     reqs = expand(BASE, [pu, pp], [[b"a", b"b"], [b"1", b"2"]], "cluster-bomb")
     assert all(isinstance(r, ConcreteRequest) for r in reqs)
+
+
+def test_expand_rejects_zero_positions() -> None:
+    """MED: with no positions, battering-ram/cluster-bomb silently emitted unmodified copies
+    of the base request — a fuzz campaign that fires N identical no-op requests. Reject it."""
+    base = b"GET /?x=v HTTP/1.1\r\nHost: h\r\n\r\n"
+    for attack in ("sniper", "battering-ram", "pitchfork", "cluster-bomb"):
+        raised = False
+        try:
+            expand(base, [], [[b"a", b"b"]], attack)
+        except ValueError:
+            raised = True
+        assert raised, f"{attack} must reject zero positions, not emit unmodified requests"

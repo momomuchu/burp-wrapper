@@ -65,6 +65,10 @@ def expand(
     For sniper/battering-ram, ``payload_lists`` holds one list (used for all positions);
     for pitchfork/cluster-bomb, one list per position (aligned with ``positions``).
     """
+    if not positions:
+        # Without positions, apply_subs() returns the base unchanged — battering-ram and
+        # cluster-bomb would silently fire N identical, unmodified requests. Refuse instead.
+        raise ValueError("fuzz requires at least one --pos position")
     if attack_type == "sniper":
         single = payload_lists[0]
         return [
