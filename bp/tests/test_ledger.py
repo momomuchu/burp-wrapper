@@ -339,6 +339,35 @@ def test_file_redact_off_read_literally(tmp_path: Path) -> None:
     assert load(config_path=config_file).redact is False
 
 
+def test_empty_redact_env_keeps_redaction_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    """SECURITY: BP_REDACT='' (e.g. `export BP_REDACT=` in a script) must NOT disable redaction."""
+    monkeypatch.setenv("BP_REDACT", "")
+    assert load(config_path=Path("/nonexistent/path/config")).redact is True
+
+
+def test_empty_url_env_falls_back_to_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An empty env var is treated as unset, not as an empty URL."""
+    monkeypatch.setenv("BURP_REST_URL", "")
+    assert load(config_path=Path("/nonexistent/path/config")).burp_rest_url == "http://127.0.0.1:8089"
+
+
+def test_invalid_bool_token_in_file_keeps_safe_default(tmp_path: Path) -> None:
+    """A typo'd boolean (redact = ye) must not silently flip a security control off."""
+    config_file = tmp_path / "config"
+    config_file.write_text("redact = ye\n", encoding="utf-8")
+    assert load(config_path=config_file).redact is True
+
+
+def test_invalid_bool_env_keeps_safe_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BP_REDACT", "maybe")
+    assert load(config_path=Path("/nonexistent/path/config")).redact is True
+
+
+def test_empty_no_ledger_env_keeps_ledger_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BP_NO_LEDGER", "")
+    assert load(config_path=Path("/nonexistent/path/config")).ledger is True
+
+
 # ---------------------------------------------------------------------------
 # Config: redact() masks Bearer token
 # ---------------------------------------------------------------------------

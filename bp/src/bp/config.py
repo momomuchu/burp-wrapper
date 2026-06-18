@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -93,13 +94,27 @@ class BpConfig:
     anomaly_pct: int = 5
 
 
-def _to_bool(val: str) -> bool:
-    return val.lower() in ("1", "true", "on", "yes")
+_TRUE_TOKENS = ("1", "true", "on", "yes")
+_FALSE_TOKENS = ("0", "false", "off", "no")
 
 
-def _to_bool_inv(val: str) -> bool:
-    """Inverted: BP_NO_LEDGER=1 means ledger=False."""
-    return not _to_bool(val)
+def _parse_bool(val: str) -> bool | None:
+    """Return True/False for a recognised token, or None if *val* is not a valid boolean.
+
+    A ``None`` result means "unrecognised" (typo, empty, junk) — callers fall back to the
+    next precedence layer rather than silently treating it as False, which previously turned
+    a security control (redact) off on ``BP_REDACT=`` or ``redact = ye``.
+    """
+    v = val.strip().lower()
+    if v in _TRUE_TOKENS:
+        return True
+    if v in _FALSE_TOKENS:
+        return False
+    return None
+
+
+def _warn_invalid(source: str, val: str) -> None:
+    print(f"warning: invalid boolean for {source}={val!r}; keeping default", file=sys.stderr)
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +143,7 @@ def load(
         if flag_val is not None:
             return flag_val
         ev = os.environ.get(env_key)
-        if ev is not None:
+        if ev:  # an empty env var (BURP_REST_URL=) is treated as unset, not as an empty URL
             return ev
         if key in file_vals:
             return file_vals[key]
@@ -136,16 +151,23 @@ def load(
 
     def _resolve_bool(key: str, flag_val: bool | None, env_key: str, invert: bool = False) -> bool:
         # ``invert`` applies ONLY to the negatively-named env var (e.g. BP_NO_LEDGER=1 -> off).
-        # The config-file key and the built-in default are positive-sense and read literally;
-        # inverting them silently flipped ``ledger=on`` to disabled (regression test in test_ledger).
+        # An empty or unrecognised value (BP_REDACT=, redact=ye) is NOT treated as False — it
+        # falls through to the next layer, so a typo never silently disables a security control.
         if flag_val is not None:
             return flag_val
         ev = os.environ.get(env_key)
-        if ev is not None:
-            return _to_bool_inv(ev) if invert else _to_bool(ev)
+        if ev and ev.strip():
+            parsed = _parse_bool(ev)
+            if parsed is not None:
+                return (not parsed) if invert else parsed
+            _warn_invalid(env_key, ev)
         if key in file_vals:
-            return _to_bool(file_vals[key])
-        return _to_bool(_DEFAULTS[key])
+            parsed = _parse_bool(file_vals[key])
+            if parsed is not None:
+                return parsed
+            _warn_invalid(key, file_vals[key])
+        default = _parse_bool(_DEFAULTS[key])
+        return default if default is not None else False
 
     def _resolve_int(key: str, flag_val: int | None, env_key: str) -> int:
         raw = _resolve_str(key, str(flag_val) if flag_val is not None else None, env_key)
