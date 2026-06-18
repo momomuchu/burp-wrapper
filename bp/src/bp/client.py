@@ -103,10 +103,19 @@ class BurpClient:
         start = time.monotonic()
         try:
             resp = self._client.request(method, path, params=params, json=json)
-        except httpx.ConnectError as e:
-            self._record(method, path, json, None, "error", "CONNECTION_REFUSED", start)
-            raise BurpUnreachable("CONNECTION_REFUSED", f"Burp REST unreachable: {e}") from e
-        env = ApiResponse[dict[str, Any]].model_validate_json(resp.content)
+        except httpx.TransportError as e:
+            # ConnectError, timeouts, read/write/protocol errors — all network-level failures.
+            code = "CONNECTION_REFUSED" if isinstance(e, httpx.ConnectError) else "TRANSPORT_ERROR"
+            self._record(method, path, json, None, "error", code, start)
+            raise BurpUnreachable(code, f"Burp REST unreachable: {e}") from e
+        try:
+            env = ApiResponse[dict[str, Any]].model_validate_json(resp.content)
+        except ValueError as e:
+            # Non-JSON / empty body (e.g. 404 on an unwired route): a server error, not CLI usage.
+            self._record(method, path, json, resp, "error", "INVALID_RESPONSE", start)
+            raise BurpError(
+                "INVALID_RESPONSE", f"server returned non-JSON (HTTP {resp.status_code})"
+            ) from e
         if not env.success or env.error is not None:
             err = env.error
             code = err.code if err else "ERROR"
