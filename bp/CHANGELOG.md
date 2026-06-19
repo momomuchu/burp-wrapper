@@ -127,7 +127,56 @@ MED and other:
 - Docs: ledger `command` column documented as subcommand-name-only (not full argv); CLI exit-code
   list gains `5`.
 
-- Test suite: 164 → 247 (Python 220 + Kotlin). Both suites green; mypy --strict + ruff clean.
+### Fixed — UltraQA convergence loop, rounds 2–9 (2026-06-19)
+
+The loop continued: each round = a parallel adversarial hunt (≈9 lanes, find→verify) → parallel
+per-file fix lanes (TDD) → both-suite verify → live re-check on `:8089`/`:8888` → atomic commits.
+HIGH/MED per round trended 32→14→11→7→11→4→14, then a partial round (session-limited) + cleanup.
+Grouped by theme (all live-verified where observable):
+
+- **IDOR detector, rebuilt for correctness.** sameAsBaseline now compares the FULL response body
+  (not a 200-char preview), so same-prefix/same-length records differing only in the tail are
+  caught; an empty baseline vs a non-empty target counts as different; a non-2xx (own) baseline can
+  no longer produce false positives; and `--param ID` matches an existing `?id=` case-insensitively
+  while PRESERVING the URL's param-name casing (so a case-sensitive server is actually hit).
+- **Decoder auto-detect, made principled.** All-hex strings decide terminally (hex if valid UTF-8,
+  else plain — never reinterpreted as base64); unpadded standard base64 is detected; a non-JWT
+  base64url branch (UTF-8-gated); smart-decode peels a trailing `+`-form-url layer; `decode`
+  normalizes the echoed encoding to lowercase; HTML auto-detect recognises `&quot;`/`&#x27;`; a
+  malformed `%`-escape no longer leaks the `URLDecoder` JDK class name.
+- **Secret redaction completeness.** `redact()` now masks Cookie/Set-Cookie values and
+  `Authorization: Basic`/`Token`/`Digest` credentials (header-line AND JSON-embedded forms), not
+  just Bearer/JWT.
+- **PII / output hygiene.** `bp check idor`, `bp req`, and `bp history replay` no longer dump raw
+  response bodies/headers (cookies, SSNs) to default stdout — they project to safe display fields
+  (bodies remain available via `--format json`); the IDOR heuristic `note` moved to stderr.
+- **Ledger robustness (ADR-0005).** A `Ledger()` construction failure (read-only `~/.bp`) warns and
+  proceeds instead of aborting with a traceback; `record`/`set_exit_code`/`tag`/`query` self-protect
+  against `sqlite3.Error`; URL userinfo is stripped from the ledger `target` (no credentials at
+  rest); and a `bp check` that exits 5 now records `exit_code=5`.
+- **Exit-code contract.** Scanner Pro-only failures travel as `PRO_REQUIRED` → exit 4 while a missing
+  DB stays `SERVICE_UNAVAILABLE` → exit 1 (so `check endpoints` no longer falsely signals "Pro
+  required"); a pydantic `ValidationError` is a clean "unexpected response shape" (exit 1, no
+  class-name leak); an unauthorized `INVALID_REQUEST→exit 2` remap was reverted.
+- **Output contract (OUTPUT.md).** Table headers/keys render UPPERCASE; `--fields` matches
+  case-insensitively with canonical-cased output; a field is "unknown" only when absent from the
+  union of all rows; an empty result + `--fields` is empty output in json and table alike.
+- **Fuzz / `--pos` correctness.** Overlapping positions raise `POS_OVERLAP` (was silent corruption);
+  JSON keys with escape sequences resolve by their logical name; duplicate `Content-Length` headers
+  collapse to one; `query:` strips the URL fragment; non-array/empty bodies get accurate errors.
+- **Contract drift & robustness.** `ProxyEntry`/`HistoryEntryResponse` nullability mirrors the Kotlin
+  contract; a malformed replay shape is a clean error (not a `KeyError` traceback); `runner` maps
+  unexpected server shapes to clean errors; `bp log`/`tag` honor `--no-ledger` and guard sqlite;
+  the auth-bypass probe degrades gracefully on a bad endpoint.
+- **Doc honesty.** The IDOR algorithm, the decoder BDD flags (`--enc`/`--algo`/`--format quiet`),
+  and the collaborator exit-code mechanism were corrected to match the shipped code.
+- **LOW cleanup:** headersBypass small-response dead zone, form-body leading-whitespace tolerance,
+  invalid numeric-config warnings, and an `EXIT_USAGE` constant in `intercept`.
+
+- Test suite: 164 → 392 Python tests + the Kotlin suite, green every round; `mypy --strict` + `ruff`
+  clean throughout. ~65 atomic commits across the loop. Two principled rewrites (full-body IDOR,
+  terminal hex-detection) broke the high-severity recurrence; remaining QA findings are deep
+  edge-cases / spec-polish rather than the original defect classes.
 
 ## [1.0.0] — 2026-06-17
 
