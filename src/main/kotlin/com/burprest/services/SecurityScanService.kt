@@ -270,15 +270,24 @@ class SecurityScanService(
         }
     }
 
-    private fun substituteParam(urlTemplate: String, param: String, value: String): String {
-        // Template substitution: {param} -> value
-        var url = urlTemplate.replace("{$param}", value)
-        // Query parameter substitution: param=oldvalue -> param=value
-        val queryParamRegex = Regex("([?&])${Regex.escape(param)}=([^&#]*)")
-        url = queryParamRegex.replace(url) { match ->
-            "${match.groupValues[1]}$param=$value"
+    internal fun substituteParam(urlTemplate: String, param: String, value: String): String {
+        // 1) {param} placeholder -> value
+        if (urlTemplate.contains("{$param}")) {
+            return urlTemplate.replace("{$param}", value)
         }
-        return url
+        // 2) existing ?param=old / &param=old -> replace the value
+        val queryParamRegex = Regex("([?&])${Regex.escape(param)}=([^&#]*)")
+        if (queryParamRegex.containsMatchIn(urlTemplate)) {
+            return queryParamRegex.replace(urlTemplate) { "${it.groupValues[1]}$param=$value" }
+        }
+        // 3) param absent: APPEND it. Otherwise the IDOR check would test the SAME url for the
+        // baseline and every target value (a silent false negative on a real IDOR). Preserve any
+        // #fragment and pick ? or & correctly.
+        val hashIdx = urlTemplate.indexOf('#')
+        val base = if (hashIdx >= 0) urlTemplate.substring(0, hashIdx) else urlTemplate
+        val frag = if (hashIdx >= 0) urlTemplate.substring(hashIdx) else ""
+        val sep = if (base.contains("?")) "&" else "?"
+        return "$base$sep$param=$value$frag"
     }
 
     companion object {
