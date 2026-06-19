@@ -21,12 +21,15 @@ def _has_findings(data: dict[str, Any]) -> bool:
     """Return True when a security-scan response reports at least one finding.
 
     Covers:
-    - vulnerableCount > 0   (auth-bypass, IDOR, CORS, endpoints)
-    - anomalousCount > 0    (headers bypass)
+    - vulnerableCount > 0        (auth-bypass, IDOR, CORS, headers)
+    - anomalousCount > 0         (headers bypass)
+    - len(findings) > 0          (EndpointsScanResponse shape for check endpoints)
     """
     if data.get("vulnerableCount", 0) > 0:
         return True
     if data.get("anomalousCount", 0) > 0:
+        return True
+    if len(data.get("findings", [])) > 0:
         return True
     return False
 

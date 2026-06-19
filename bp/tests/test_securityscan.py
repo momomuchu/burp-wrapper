@@ -62,6 +62,46 @@ def test_has_findings_neither_key_present() -> None:
     assert _has_findings({"results": []}) is False
 
 
+# ---------------------------------------------------------------------------
+# [00]/[19] RED — EndpointsScanResponse shape: findings list, not count keys
+# ---------------------------------------------------------------------------
+
+
+def test_has_findings_findings_list_nonempty() -> None:
+    """findings=[{...}] with scanned/durationMs → has findings (endpoints shape)."""
+    data = {"findings": [{"endpoint": "/admin", "test": "auth-bypass"}], "scanned": 3, "durationMs": 120}
+    assert _has_findings(data) is True
+
+
+def test_has_findings_findings_list_empty() -> None:
+    """findings=[] → no findings (endpoints shape, clean scan)."""
+    data = {"findings": [], "scanned": 3, "durationMs": 87}
+    assert _has_findings(data) is False
+
+
+def test_has_findings_findings_list_multiple() -> None:
+    """findings=[...] with multiple entries → has findings."""
+    data = {"findings": [{"endpoint": "/a"}, {"endpoint": "/b"}], "scanned": 10}
+    assert _has_findings(data) is True
+
+
+def test_has_findings_findings_key_absent_scanned_only() -> None:
+    """scanned/durationMs present but no findings key → no findings (safe default)."""
+    assert _has_findings({"scanned": 5, "durationMs": 50}) is False
+
+
+def test_has_findings_vulnerable_count_unchanged_after_fix() -> None:
+    """Regression: existing vulnerableCount path still works after findings-list fix."""
+    assert _has_findings({"vulnerableCount": 1, "scanned": 1}) is True
+    assert _has_findings({"vulnerableCount": 0}) is False
+
+
+def test_has_findings_anomalous_count_unchanged_after_fix() -> None:
+    """Regression: existing anomalousCount path still works after findings-list fix."""
+    assert _has_findings({"anomalousCount": 2}) is True
+    assert _has_findings({"anomalousCount": 0}) is False
+
+
 def test_has_findings_nested_data() -> None:
     """_has_findings works on a typical server response dict."""
     assert _has_findings({"vulnerableCount": 1, "results": [{"endpoint": "/admin"}]}) is True
