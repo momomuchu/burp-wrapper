@@ -99,7 +99,12 @@ class DecoderService {
         //    by 4 (e.g. "deadbeef") would otherwise match the base64 regex first and decode to
         //    garbage. Pure hex characters are a strict subset of base64 characters, so hex must
         //    win when all characters are hex digits and the length is even.
-        data.matches(Regex("^[0-9a-fA-F]+$")) && data.length % 2 == 0 && data.length >= 2 -> "hex"
+        //    [07] Guard: only classify as "hex" when the decoded bytes are valid UTF-8.
+        //    Auto-detect is a guess; if the hex bytes are binary (e.g. deadbeef → 0xDE 0xAD…),
+        //    fall through to "plain" and return the input unchanged rather than throwing 400.
+        //    Explicit decode(encoding="hex") still calls decodeUtf8OrThrow — honest error there.
+        data.matches(Regex("^[0-9a-fA-F]+$")) && data.length % 2 == 0 && data.length >= 2
+                && isHexDecodableAsUtf8(data) -> "hex"
 
         // 3. [13] base64url tokens containing '-' or '_' that are not JWT segments.
         //    Gate: flexible-base64 decode must yield valid UTF-8 text; this prevents classifying
@@ -162,6 +167,31 @@ class DecoderService {
             throw IllegalArgumentException(
                 "decoded bytes are not valid UTF-8 (binary data); use a hex/raw view to inspect"
             )
+        }
+    }
+
+    /**
+     * Returns true only if [data] (treated as a hex string) decodes without error AND the
+     * resulting bytes are valid UTF-8. Used as a guard in detectEncoding (auto-detect only)
+     * so that binary hex strings like "deadbeef" fall through to "plain" rather than being
+     * classified as "hex" and then throwing during decode.
+     *
+     * Precondition: caller has already verified data matches `^[0-9a-fA-F]+$` and even length.
+     */
+    private fun isHexDecodableAsUtf8(data: String): Boolean {
+        val bytes = try {
+            data.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+        } catch (_: NumberFormatException) {
+            return false
+        }
+        val decoder = Charsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+        return try {
+            decoder.decode(ByteBuffer.wrap(bytes))
+            true
+        } catch (_: java.nio.charset.CharacterCodingException) {
+            false
         }
     }
 

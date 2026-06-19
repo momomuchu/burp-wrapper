@@ -148,12 +148,24 @@ class DecoderServiceTest {
     }
 
     @Test
-    fun `14 -auto-detect of deadbeef routes to hex and then throws for binary content not silent base64 garbage`() {
-        // "deadbeef" previously matched base64 first (length%4==0, all base64 chars) and returned
-        // garbled replacement-char text. After fix: hex fires first, then [16] rejects the
-        // non-UTF-8 bytes with a clean IllegalArgumentException — no silent corruption.
+    fun `07 -auto-detect of deadbeef falls to plain and returns input unchanged without throwing`() {
+        // [07] deadbeef is all-hex and even-length so the hex branch fires first, but its bytes
+        // 0xDE 0xAD 0xBE 0xEF are not valid UTF-8. The new isHexDecodableAsUtf8 guard returns
+        // false, so detectEncoding falls through to "plain". decode() returns the input unchanged —
+        // no IllegalArgumentException, no HTTP 400. Auto-detect is a guess; graceful degradation
+        // is the contract.
+        val r = service.decode(DecodeRequest(data = "deadbeef", encoding = null))
+        assertEquals("plain", r.encoding)
+        assertEquals("deadbeef", r.result)
+    }
+
+    @Test
+    fun `07 -explicit hex decode of deadbeef still throws for binary bytes`() {
+        // Explicit --enc hex is an honest request: the caller said "this is hex, decode it".
+        // decodeUtf8OrThrow must still reject non-UTF-8 bytes with IllegalArgumentException.
+        // This is unchanged from before — only auto-detect (encoding=null) degrades gracefully.
         assertFailsWith<IllegalArgumentException> {
-            service.decode(DecodeRequest(data = "deadbeef", encoding = null))
+            service.decode(DecodeRequest(data = "deadbeef", encoding = "hex"))
         }
     }
 
