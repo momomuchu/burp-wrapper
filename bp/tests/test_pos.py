@@ -399,3 +399,74 @@ def test_json_object_body_resolves_correctly_after_fix() -> None:
     )
     p = resolve_pos(req, "body:id")
     assert req[p.start : p.end] == b"99"
+
+
+# --- [A] form body with leading whitespace must still resolve ---
+
+
+def test_form_body_leading_spaces_resolves_field() -> None:
+    """[A] body:a on a form body with leading spaces must find field 'a'.
+
+    Before the fix, _resolve_form passes the raw body to _scan_kv which does a
+    byte-exact key comparison; '   a=b' fails to match key 'a' because the segment
+    is '   a', not 'a'.  After the fix, leading whitespace is stripped before the
+    key scan and the returned offsets still point at the correct bytes in raw.
+    """
+    req = (
+        b"POST /api HTTP/1.1\r\n"
+        b"Content-Type: application/x-www-form-urlencoded\r\n"
+        b"\r\n"
+        b"   a=b"
+    )
+    p = resolve_pos(req, "body:a")
+    assert req[p.start : p.end] == b"b"
+
+
+def test_form_body_leading_spaces_offset_is_original_relative() -> None:
+    """[A] resolved offsets must be relative to the original raw bytes, not the stripped body."""
+    req = (
+        b"POST /api HTTP/1.1\r\n"
+        b"Content-Type: application/x-www-form-urlencoded\r\n"
+        b"\r\n"
+        b"   a=hello"
+    )
+    p = resolve_pos(req, "body:a")
+    # The slice using the returned offsets must yield the value bytes in the original request.
+    assert req[p.start : p.end] == b"hello"
+
+
+def test_form_body_no_leading_spaces_still_resolves() -> None:
+    """[A] regression: a normal form body (no leading whitespace) must still work."""
+    req = (
+        b"POST /api HTTP/1.1\r\n"
+        b"Content-Type: application/x-www-form-urlencoded\r\n"
+        b"\r\n"
+        b"foo=bar&baz=qux"
+    )
+    p = resolve_pos(req, "body:foo")
+    assert req[p.start : p.end] == b"bar"
+
+
+def test_form_body_leading_spaces_second_field_resolves() -> None:
+    """[A] a second field after leading-space prefix is also accessible."""
+    req = (
+        b"POST /api HTTP/1.1\r\n"
+        b"Content-Type: application/x-www-form-urlencoded\r\n"
+        b"\r\n"
+        b"   a=1&b=2"
+    )
+    p = resolve_pos(req, "body:b")
+    assert req[p.start : p.end] == b"2"
+
+
+def test_form_body_missing_field_still_raises() -> None:
+    """[A] regression: a missing field on a leading-space body still raises POS_NOT_FOUND."""
+    req = (
+        b"POST /api HTTP/1.1\r\n"
+        b"Content-Type: application/x-www-form-urlencoded\r\n"
+        b"\r\n"
+        b"   a=b"
+    )
+    with pytest.raises(PosError) as ei:
+        resolve_pos(req, "body:missing")
+    assert ei.value.code == "POS_NOT_FOUND"

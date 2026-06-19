@@ -412,10 +412,15 @@ def _resolve_json(body: bytes, b0: int, field: str, selector: str) -> Position:
 
 
 def _resolve_form(body: bytes, b0: int, field: str, selector: str) -> Position:
-    span = _scan_kv(body, field.encode(), 0)
+    # Strip leading whitespace before key scanning (mirrors the JSON branch in _resolve_body).
+    # The stripped byte count is added back to all offsets so Position values remain
+    # relative to the original raw request, not to the stripped body.
+    stripped = body.lstrip()
+    lead = len(body) - len(stripped)
+    span = _scan_kv(stripped, field.encode(), 0)
     if span is None:
         raise PosError("POS_NOT_FOUND", f"form field {field!r} not found")
-    return Position(b0 + span[0], b0 + span[1], selector)
+    return Position(b0 + lead + span[0], b0 + lead + span[1], selector)
 
 
 _RESOLVERS: dict[str, Resolver] = {

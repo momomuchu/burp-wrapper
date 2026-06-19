@@ -174,6 +174,13 @@ def load(
         try:
             return int(raw)
         except ValueError:
+            # Warn only when the invalid value came from env/config, not from a CLI flag
+            # (a flag value is always pre-validated as int by the CLI layer).
+            if flag_val is None:
+                print(
+                    f"warning: invalid int for {env_key}={raw!r}; keeping default",
+                    file=sys.stderr,
+                )
             return int(_DEFAULTS[key])
 
     url_flag = burp_rest_url  # may be None or explicit str

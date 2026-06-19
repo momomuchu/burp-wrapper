@@ -275,3 +275,95 @@ class TestLoadConfigFile:
         cfg_file.write_text("ledger=ye\n")
         cfg = load(config_path=cfg_file)
         assert cfg.ledger is True
+
+
+# ---------------------------------------------------------------------------
+# [B] Invalid numeric env vars must keep the default AND warn to stderr
+# ---------------------------------------------------------------------------
+
+
+class TestLoadInvalidNumericEnv:
+    """BP_THROTTLE_MS / BP_ANOMALY_PCT with non-numeric values must:
+    - keep the built-in default (not crash, not silently return 0)
+    - emit a warning to stderr (mirrors the invalid-boolean behaviour)
+    """
+
+    def test_invalid_throttle_ms_keeps_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """BP_THROTTLE_MS=abc must keep the default (0), not crash."""
+        monkeypatch.setenv("BP_THROTTLE_MS", "abc")
+        cfg = load()
+        assert cfg.throttle_ms == 0
+
+    def test_invalid_throttle_ms_emits_warning(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """BP_THROTTLE_MS=abc must emit a warning to stderr."""
+        monkeypatch.setenv("BP_THROTTLE_MS", "abc")
+        load()
+        err = capsys.readouterr().err
+        assert "BP_THROTTLE_MS" in err or "throttle_ms" in err, (
+            f"expected a warning mentioning throttle_ms or BP_THROTTLE_MS in stderr, got: {err!r}"
+        )
+        assert "warning" in err.lower()
+
+    def test_invalid_anomaly_pct_keeps_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """BP_ANOMALY_PCT=xyz must keep the default (5), not crash."""
+        monkeypatch.setenv("BP_ANOMALY_PCT", "xyz")
+        cfg = load()
+        assert cfg.anomaly_pct == 5
+
+    def test_invalid_anomaly_pct_emits_warning(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """BP_ANOMALY_PCT=xyz must emit a warning to stderr."""
+        monkeypatch.setenv("BP_ANOMALY_PCT", "xyz")
+        load()
+        err = capsys.readouterr().err
+        assert "BP_ANOMALY_PCT" in err or "anomaly_pct" in err, (
+            f"expected a warning mentioning anomaly_pct or BP_ANOMALY_PCT in stderr, got: {err!r}"
+        )
+        assert "warning" in err.lower()
+
+    def test_valid_throttle_ms_no_warning(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A valid BP_THROTTLE_MS value must be used without any warning."""
+        monkeypatch.setenv("BP_THROTTLE_MS", "250")
+        cfg = load()
+        assert cfg.throttle_ms == 250
+        err = capsys.readouterr().err
+        assert "throttle" not in err.lower()
+
+    def test_valid_anomaly_pct_no_warning(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A valid BP_ANOMALY_PCT value must be used without any warning."""
+        monkeypatch.setenv("BP_ANOMALY_PCT", "10")
+        cfg = load()
+        assert cfg.anomaly_pct == 10
+        err = capsys.readouterr().err
+        assert "anomaly" not in err.lower()
+
+    def test_unset_throttle_ms_uses_default_silently(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Unset BP_THROTTLE_MS must use default (0) with no warning."""
+        monkeypatch.delenv("BP_THROTTLE_MS", raising=False)
+        cfg = load()
+        assert cfg.throttle_ms == 0
+        err = capsys.readouterr().err
+        assert "throttle" not in err.lower()
+
+    def test_unset_anomaly_pct_uses_default_silently(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Unset BP_ANOMALY_PCT must use default (5) with no warning."""
+        monkeypatch.delenv("BP_ANOMALY_PCT", raising=False)
+        cfg = load()
+        assert cfg.anomaly_pct == 5
+        err = capsys.readouterr().err
+        assert "anomaly" not in err.lower()
