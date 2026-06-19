@@ -70,20 +70,26 @@ def poll(
     NOTE: poll errors are silently swallowed by the extension (returns found=false on HTTP 200),
     so an unknown id is indistinguishable from a payload with no interaction yet.
     """
-    typer.echo(
-        "note: Collaborator poll timestamps reflect poll time (Instant.now()), not capture time.",
-        err=True,
-    )
     if collab_id is not None:
 
         def _poll_id(c: Any) -> Any:
-            return c.get(f"/collaborator/poll/{collab_id}")
+            result = c.get(f"/collaborator/poll/{collab_id}")
+            typer.echo(
+                "note: Collaborator poll timestamps reflect poll time (Instant.now()), not capture time.",
+                err=True,
+            )
+            return result
 
         run(ctx, _poll_id)
     else:
 
         def _poll_all(c: Any) -> Any:
-            return c.get("/collaborator/poll")
+            result = c.get("/collaborator/poll")
+            typer.echo(
+                "note: Collaborator poll timestamps reflect poll time (Instant.now()), not capture time.",
+                err=True,
+            )
+            return result
 
         run(ctx, _poll_all)
 

@@ -64,11 +64,15 @@ def scan_audit(
     Scope is determined by the Burp UI scope, not this argument.
     Requires Burp Suite Professional; exits with code 4 on Community.
     """
-    typer.echo(
-        "warning: audit ignores <url>; scope is the Burp UI scope, not this argument.",
-        err=True,
-    )
-    run(ctx, lambda c: c.post("/scanner/audit", {"url": url, "config": {}}))
+    def _do(c: Any) -> Any:
+        result = c.post("/scanner/audit", {"url": url, "config": {}})
+        typer.echo(
+            "warning: audit ignores <url>; scope is the Burp UI scope, not this argument.",
+            err=True,
+        )
+        return result
+
+    run(ctx, _do)
 
 
 @sub.command("all")
