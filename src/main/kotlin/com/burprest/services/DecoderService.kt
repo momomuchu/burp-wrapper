@@ -172,7 +172,11 @@ class DecoderService {
     private fun decodeBase64Flexible(data: String): String {
         // Accept standard AND URL-safe base64 (JWTs), with or without '=' padding.
         val normalized = data.replace('-', '+').replace('_', '/')
-        val padded = normalized.padEnd((normalized.length + 3) / 4 * 4, '=')
+        // [04] Strip any existing trailing '=' before computing the correct padding length.
+        // Without this, over-padded inputs like "dA===" inflate the length calculation and
+        // produce excess '=' (e.g. "dA======") that Java's strict Base64 decoder rejects.
+        val stripped = normalized.trimEnd('=')
+        val padded = stripped.padEnd((stripped.length + 3) / 4 * 4, '=')
         val bytes = try {
             Base64.getDecoder().decode(padded)
         } catch (_: IllegalArgumentException) {
@@ -231,7 +235,9 @@ class DecoderService {
      */
     private fun isBase64UrlDecodableAsUtf8(data: String): Boolean {
         val normalized = data.replace('-', '+').replace('_', '/')
-        val padded = normalized.padEnd((normalized.length + 3) / 4 * 4, '=')
+        // [04] Strip existing trailing '=' before re-padding, matching decodeBase64Flexible.
+        val stripped = normalized.trimEnd('=')
+        val padded = stripped.padEnd((stripped.length + 3) / 4 * 4, '=')
         val bytes = try {
             Base64.getDecoder().decode(padded)
         } catch (_: IllegalArgumentException) {

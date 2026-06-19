@@ -275,6 +275,39 @@ class DecoderServiceTest {
         assertEquals("base64", r.steps[0].encoding)
     }
 
+    // ── [04] RED: over-padded base64 must strip excess padding before re-padding ─────────────────
+
+    @Test
+    fun `04 -over-padded base64 dA with three equals signs decodes to t`() {
+        // "dA===" is "dA==" (correct padding for 't') with one extra '='.
+        // Old code: normalized="dA===", length=5 → padEnd(8,'=') = "dA======" → strict decoder throws.
+        // New code: strip trailing '=' first → "dA", length=2 → padEnd(4,'=') = "dA==" → 't'.
+        val r = service.decode(DecodeRequest(data = "dA===", encoding = "base64"))
+        assertEquals("t", r.result)
+        assertEquals("base64", r.encoding)
+    }
+
+    @Test
+    fun `04 -correctly-padded aGVsbG8 single equals still decodes to hello`() {
+        // Regression guard: correct padding must not be broken by the strip step.
+        val r = service.decode(DecodeRequest(data = "aGVsbG8=", encoding = "base64"))
+        assertEquals("hello", r.result)
+    }
+
+    @Test
+    fun `04 -unpadded dGVzdA still decodes to test`() {
+        // No trailing '=' to strip; padding must still be appended correctly.
+        val r = service.decode(DecodeRequest(data = "dGVzdA", encoding = "base64"))
+        assertEquals("test", r.result)
+    }
+
+    @Test
+    fun `04 -url-safe Pz8_ still decodes to three question marks`() {
+        // URL-safe chars are normalized before stripping; result must be unchanged.
+        val r = service.decode(DecodeRequest(data = "Pz8_", encoding = "base64"))
+        assertEquals("???", r.result)
+    }
+
     // ── [B04] RED: decode() must return canonical lowercase encoding, not the raw request casing ──
 
     @Test
