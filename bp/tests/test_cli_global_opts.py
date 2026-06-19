@@ -57,6 +57,21 @@ def test_hoist_no_ledger_flag_after_subcommand() -> None:
     assert _hoist_global_opts(["health", "--no-ledger"]) == ["--no-ledger", "health"]
 
 
+def test_hoist_no_redact_flag_after_subcommand() -> None:
+    assert _hoist_global_opts(["health", "--no-redact"]) == ["--no-redact", "health"]
+
+
+def test_no_redact_flag_is_accepted_globally() -> None:
+    """--no-redact must be a real global flag (parses, reaches the connection layer -> exit 3)."""
+    entry = (
+        "import os; os.environ['BURP_REST_URL']='http://127.0.0.1:9999'; "
+        "import sys; sys.argv=['bp','--no-redact','health']; "
+        "from bp.cli import cli_main; cli_main()"
+    )
+    r = subprocess.run([sys.executable, "-c", entry], capture_output=True, text=True)
+    assert r.returncode == 3, f"expected exit 3 (conn refused), got {r.returncode}: {r.stderr}"
+
+
 # --- Burp-gated end-to-end: the real binary must accept the option after the subcommand ---
 
 def _burp_up() -> bool:

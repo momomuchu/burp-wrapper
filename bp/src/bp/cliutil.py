@@ -39,12 +39,17 @@ class State:
     fmt: str
     fields: list[str] | None
     no_ledger: bool = False
+    no_redact: bool = False
 
 
 def run(ctx: typer.Context, fn: Callable[[BurpClient], Any]) -> None:
     """Run ``fn`` against a BurpClient; record to the Run Ledger and render (redacted) output."""
     state: State = ctx.obj
-    conf = _config.load(burp_rest_url=state.url, ledger=False if state.no_ledger else None)
+    conf = _config.load(
+        burp_rest_url=state.url,
+        ledger=False if state.no_ledger else None,
+        redact=False if state.no_redact else None,
+    )
     ledger = Ledger() if conf.ledger else None
     client = BurpClient(state.url, ledger=ledger, redact=conf.redact, command=ctx.command_path)
     exit_code = 0

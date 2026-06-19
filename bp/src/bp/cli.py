@@ -42,6 +42,9 @@ def main(
     no_ledger: bool = typer.Option(
         False, "--no-ledger", help="Skip the Run Ledger for this invocation (ADR-0005)."
     ),
+    no_redact: bool = typer.Option(
+        False, "--no-redact", help="Do not mask secrets in output (e.g. to read a JWT you decode)."
+    ),
     version: bool = typer.Option(
         False, "--version", help="Show bp version and exit.", is_eager=True, callback=_version_cb
     ),
@@ -49,7 +52,11 @@ def main(
     if fmt not in FORMATS:
         raise typer.BadParameter(f"must be one of {', '.join(FORMATS)}", param_hint="--format")
     ctx.obj = State(
-        url=url, fmt=fmt, fields=fields.split(",") if fields else None, no_ledger=no_ledger
+        url=url,
+        fmt=fmt,
+        fields=fields.split(",") if fields else None,
+        no_ledger=no_ledger,
+        no_redact=no_redact,
     )
 
 
@@ -144,7 +151,7 @@ _register_command_groups()
 
 
 _GLOBAL_VALUE_OPTS = ("--url", "--format", "--fields")
-_GLOBAL_FLAG_OPTS = ("--no-ledger",)
+_GLOBAL_FLAG_OPTS = ("--no-ledger", "--no-redact")
 
 
 def _find_subcommand(argv: list[str]) -> int | None:
