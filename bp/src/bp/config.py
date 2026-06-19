@@ -194,17 +194,42 @@ def load(
 # redact()
 # ---------------------------------------------------------------------------
 
-# Patterns to mask.  Each pattern captures a "prefix" group and a "secret" group.
-# The secret group is replaced with *** .
+# Patterns to mask.  Each pattern must use a named group ``secret`` for the
+# portion to redact.  Everything else in the match (prefix/context captured by
+# other groups or plain match text) is preserved verbatim.
+#
+# Two forms are covered for each credential class:
+#   (A) Header-line form:  "Authorization: Basic <cred>"
+#   (B) JSON-embedded form: "Basic <cred>" inside a JSON string value, or a
+#       Cookie "value" field in {"name":"Cookie","value":"..."} blobs.
 _REDACT_PATTERNS: list[re.Pattern[str]] = [
-    # Authorization: Bearer <token>  or  Authorization: Basic <creds>
-    re.compile(r"(Authorization:\s*(?:Bearer|Basic|Token)\s+)\S+", re.IGNORECASE),
-    # Bearer token anywhere (e.g. in JSON values)
-    re.compile(r"(Bearer\s+)[A-Za-z0-9\-_=.+/]{8,}", re.IGNORECASE),
-    # Cookie: name=value pairs
-    re.compile(r"(Cookie:\s*)\S.*", re.IGNORECASE),
-    # JWT: three base64url segments separated by dots (eyJ...)
-    re.compile(r"(eyJ[A-Za-z0-9\-_]+\.)([A-Za-z0-9\-_.]+)"),
+    # [A] Authorization header line: Bearer / Basic / Token / Digest
+    re.compile(
+        r"(Authorization:\s*(?:Bearer|Basic|Token|Digest)\s+)(?P<secret>\S.*)",
+        re.IGNORECASE,
+    ),
+    # [B] Credential scheme keyword anywhere (JSON-embedded or standalone).
+    #     Covers Bearer, Basic, Token — masks the credential that follows.
+    #     Min 4 chars to avoid false positives on short words after "Token".
+    re.compile(
+        r"((?:Bearer|Basic|Token)\s+)(?P<secret>[A-Za-z0-9\-_=.+/]{4,})",
+        re.IGNORECASE,
+    ),
+    # [B] Digest credential value anywhere (scheme + rest of cred, may contain spaces
+    #     and embedded quotes as per RFC 7235 quoted-string values).
+    re.compile(r"(Digest\s+)(?P<secret>\S[^\r\n]*)", re.IGNORECASE),
+    # [A] Cookie / Set-Cookie header line
+    re.compile(r"((?:Set-)?Cookie:\s*)(?P<secret>\S.*)", re.IGNORECASE),
+    # [B] Cookie value in JSON flat-key form: {"Cookie":"session=SECRET"}
+    re.compile(r'("(?:Set-)?Cookie"\s*:\s*")(?P<secret>[^"]+)', re.IGNORECASE),
+    # [B] Cookie value in {"name":"Cookie","value":"session=SECRET"} blob.
+    #     Non-capturing context (Cookie name field) precedes the value field.
+    re.compile(
+        r'(?:"(?:Set-)?Cookie"[^}]{0,200}"value"\s*:\s*")(?P<secret>[^"]+)',
+        re.IGNORECASE | re.DOTALL,
+    ),
+    # JWT: three base64url segments — keep header, mask payload+signature.
+    re.compile(r"(eyJ[A-Za-z0-9\-_]+\.)(?P<secret>[A-Za-z0-9\-_.]+)"),
 ]
 
 _REDACT_PLACEHOLDER = "***"
@@ -213,14 +238,16 @@ _REDACT_PLACEHOLDER = "***"
 def redact(text: str) -> str:
     """Mask JWT/Authorization/Cookie values in *text*.
 
-    Applies all _REDACT_PATTERNS; replaces the secret portion with ***.
+    Applies all _REDACT_PATTERNS.  Each pattern uses a named group ``secret``
+    for the portion to replace; everything else in the match is kept verbatim.
     If the config has redact=off this function should not be called by the
     caller — but it is always safe to call.
     """
     for pattern in _REDACT_PATTERNS:
-        # Replace group(0) keeping group(1) (prefix), replacing rest with ***
         def _replace(m: re.Match[str]) -> str:
-            prefix = m.group(1)
+            full = m.group(0)
+            # Keep everything in the match before the secret group.
+            prefix = full[: m.start("secret") - m.start(0)]
             return f"{prefix}{_REDACT_PLACEHOLDER}"
 
         text = pattern.sub(_replace, text)
