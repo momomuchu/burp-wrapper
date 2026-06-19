@@ -478,6 +478,87 @@ class SecurityScanServiceTest {
     }
 
     // ---------------------------------------------------------------------------
+    // [06] IDOR — baseline non-2xx must suppress all vulnerable flags (false-positive guard)
+    // ---------------------------------------------------------------------------
+
+    /**
+     * RED->GREEN [06]: baseline (own ID) returns 404 (error page).
+     * Target returns 200 with a completely different body.
+     * Old code: sameAsBaseline=false (different previews) + status 200 + length>0 -> vulnerable=true (FALSE POSITIVE).
+     * New code: baseline.status=404 is not in 200..299 -> no target may be marked vulnerable -> vulnerableCount=0.
+     */
+    @Test
+    fun `idor - baseline returning 404 suppresses all vulnerable flags even when target returns 200 with different body`() {
+        every { sessionService.send(match { it.url.contains("own") }) } returns AuthenticatedResponse(
+            statusCode = 404,
+            headers = emptyList(),
+            body = "Not Found — error page content that differs from any real record",
+            durationMs = 0,
+        )
+        every { sessionService.send(match { it.url.contains("other") }) } returns AuthenticatedResponse(
+            statusCode = 200,
+            headers = emptyList(),
+            body = "real-user-record-content-completely-different-from-baseline",
+            durationMs = 0,
+        )
+
+        val resp = svc.idor(
+            IdorRequest(
+                endpoint = "http://t/resource?id={id}",
+                param = "id",
+                ownValues = listOf("own"),
+                targetValues = listOf("other"),
+            )
+        )
+
+        assertEquals(
+            0,
+            resp.vulnerableCount,
+            "Baseline is 404 — comparison against an error body is meaningless; no target must be flagged vulnerable"
+        )
+        assertFalse(
+            resp.results.first().vulnerable,
+            "Target must not be vulnerable when baseline itself failed (404)"
+        )
+    }
+
+    /**
+     * RED->GREEN [06] regression lock: baseline 200 + target 200 + different body still flags vulnerable.
+     * Verifies the fix does not regress the normal detection path.
+     */
+    @Test
+    fun `idor - baseline returning 200 and target returning 200 with different body remains vulnerable`() {
+        every { sessionService.send(match { it.url.contains("own") }) } returns AuthenticatedResponse(
+            statusCode = 200,
+            headers = emptyList(),
+            body = "alice-private-record",
+            durationMs = 0,
+        )
+        every { sessionService.send(match { it.url.contains("other") }) } returns AuthenticatedResponse(
+            statusCode = 200,
+            headers = emptyList(),
+            body = "bob-private-record-different",
+            durationMs = 0,
+        )
+
+        val resp = svc.idor(
+            IdorRequest(
+                endpoint = "http://t/resource?id={id}",
+                param = "id",
+                ownValues = listOf("own"),
+                targetValues = listOf("other"),
+            )
+        )
+
+        assertEquals(
+            1,
+            resp.vulnerableCount,
+            "Baseline 200 + target 200 with different content -> genuine IDOR -> vulnerableCount must be 1"
+        )
+        assertTrue(resp.results.first().vulnerable)
+    }
+
+    // ---------------------------------------------------------------------------
     // [08] and [11] — model fields wired (note, ignoredOwnValues)
     // ---------------------------------------------------------------------------
 

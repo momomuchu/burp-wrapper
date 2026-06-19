@@ -130,7 +130,12 @@ class SecurityScanService(
                     kotlin.math.abs(length - baseline.length) < lengthThreshold
             }
 
-            val vulnerable = !sameAsBaseline && resp.statusCode in 200..299 && length > 0
+            // [06] Gate on baseline success: if the own-resource returned a non-2xx status
+            // (e.g. 404/401), the bodyPreview is an error page — any target with different
+            // content would trivially satisfy !sameAsBaseline, producing a false positive.
+            // Mirror the authBypass intent: both sides must be 2xx before a finding is valid.
+            val baselineSucceeded = baselineResp.statusCode in 200..299
+            val vulnerable = baselineSucceeded && !sameAsBaseline && resp.statusCode in 200..299 && length > 0
 
             IdorProbeResult(
                 value = targetValue,
