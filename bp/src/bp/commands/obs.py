@@ -87,7 +87,12 @@ def log_cmd(
 
     fmt, fields = _resolve_fmt_fields(ctx)
     data: list[dict[str, Any]] = [r.as_dict() for r in rows]
-    typer.echo(render(data, fmt, fields=fields))
+    # [09] Mirror cliutil.run's guard: typer.echo('') writes '\n', breaking the zero-records
+    # contract (OUTPUT.md §4.4: empty stdout + exit 0). log_cmd bypasses cliutil.run so it
+    # needs its own guard — only echo when render produces non-empty output.
+    out = render(data, fmt, fields=fields)
+    if out:
+        typer.echo(out)
 
 
 # ---------------------------------------------------------------------------
