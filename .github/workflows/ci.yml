@@ -43,3 +43,29 @@ jobs:
           name: burp-rest-extension
           path: build/libs/burp-rest-extension.jar
           retention-days: 30
+
+  bp:
+    name: bp (Python CLI)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bp
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv + Python 3.11
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: uv sync
+
+      - name: Test
+        run: uv run pytest -q
+
+      - name: Type-check
+        run: uv run mypy --strict src
+
+      - name: Lint
+        run: uv run ruff check src tests
