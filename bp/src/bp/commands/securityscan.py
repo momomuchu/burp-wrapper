@@ -10,11 +10,71 @@ carry credentials; otherwise probes run unauthenticated.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal, cast, overload
 
 import typer
 
 from bp.cliutil import EXIT_VULN, parse_headers, run
+
+
+# ---------------------------------------------------------------------------
+# Output-hygiene helpers (AX-CAP-BODY / [02] PII-leak / [13] NDJSON pollution)
+# ---------------------------------------------------------------------------
+
+
+def _strip_body_preview(obj: Any) -> Any:
+    """Recursively remove every ``bodyPreview`` key from dicts/lists.
+
+    bodyPreview is opt-in per AX-CAP-BODY (OUTPUT.md §4.5); it must never
+    appear in default stdout output because it carries raw HTTP response bytes
+    that can include victim PII (SSN, email, session tokens).
+    """
+    if isinstance(obj, dict):
+        return {k: _strip_body_preview(v) for k, v in obj.items() if k != "bodyPreview"}
+    if isinstance(obj, list):
+        return [_strip_body_preview(item) for item in obj]
+    return obj
+
+
+@overload
+def _project_for_display(data: dict[str, Any], return_note: Literal[False] = ...) -> dict[str, Any]: ...
+
+@overload
+def _project_for_display(data: dict[str, Any], return_note: Literal[True]) -> tuple[dict[str, Any], str]: ...
+
+def _project_for_display(
+    data: dict[str, Any],
+    return_note: bool = False,
+) -> "dict[str, Any] | tuple[dict[str, Any], str]":
+    """Project a security-scan response dict for display on stdout.
+
+    Applies three transformations required before the dict is rendered:
+
+    1. Recursively remove every ``bodyPreview`` key (AX-CAP-BODY — opt-in only).
+    2. Pop ``note`` from the dict; the caller echoes it to stderr so stdout stays
+       clean for NDJSON/machine consumers ([13]).
+    3. Drop ``ignoredOwnValues`` when it is an empty list — it clutters output
+       without adding information ([13]).  Non-empty values are preserved.
+
+    The critical fields for ``_has_findings`` — ``vulnerableCount``,
+    ``anomalousCount``, and ``findings`` — are always preserved.
+
+    When ``return_note=True`` (used in unit tests), returns ``(projected, note)``
+    as a 2-tuple so callers can assert on the extracted note text.
+    When ``return_note=False`` (default, used in command ``_do`` wrappers), returns
+    only the projected dict.
+    """
+    projected: dict[str, Any] = cast(dict[str, Any], _strip_body_preview(data))
+
+    note: str = projected.pop("note", "") or ""
+
+    # Drop ignoredOwnValues only when empty — non-empty carries useful context.
+    if "ignoredOwnValues" in projected and projected["ignoredOwnValues"] == []:
+        del projected["ignoredOwnValues"]
+
+    if return_note:
+        return projected, note
+    return projected
 
 
 def _has_findings(data: dict[str, Any]) -> bool:
@@ -131,7 +191,12 @@ def check_idor(
         req_body["extraHeaders"] = extra_headers
 
     def _do(client: Any) -> Any:
-        return client.post("/scan/idor", req_body)
+        raw = client.post("/scan/idor", req_body)
+        # [02] Strip bodyPreview (AX-CAP-BODY) and [13] route note to stderr.
+        projected, note = _project_for_display(raw, return_note=True)
+        if note:
+            typer.echo(f"note: {note}", err=True)
+        return projected
 
     run(ctx, _do, exit_on=lambda d: EXIT_VULN if _has_findings(d) else None)
 

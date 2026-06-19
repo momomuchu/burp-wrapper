@@ -11,9 +11,11 @@ These tests cover:
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
-from bp.commands.securityscan import _has_findings
+from bp.commands.securityscan import _has_findings, _project_for_display
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +170,143 @@ def test_check_commands_use_exit_on_not_holder_pattern() -> None:
                         f"{cmd.__name__} still contains a direct `raise typer.Exit(...)` — "
                         "the holder pattern must be replaced by exit_on= in run()"
                     )
+
+
+# ---------------------------------------------------------------------------
+# [02][13] RED — _project_for_display output-hygiene (PII-leak / NDJSON pollution)
+# ---------------------------------------------------------------------------
+
+# Canonical fake IdorResponse that mirrors what the server sends.
+_FAKE_IDOR_RESPONSE: dict[str, Any] = {
+    "vulnerableCount": 1,
+    "results": [
+        {
+            "targetId": "42",
+            "statusCode": 200,
+            "bodyPreview": "SSN: 123-45-6789, email: victim@corp.com",
+            "delta": 0.8,
+        },
+        {
+            "targetId": "43",
+            "statusCode": 200,
+            "bodyPreview": "admin email: root@corp.com",
+            "delta": 0.6,
+        },
+    ],
+    "baseline": {
+        "statusCode": 200,
+        "bodyPreview": "your own baseline body here",
+        "length": 512,
+    },
+    "note": "IDOR heuristic: >= 5% body-length delta or 2xx on target IDs.",
+    "ignoredOwnValues": [],
+}
+
+
+def _deep_has_key(obj: Any, key: str) -> bool:
+    """Recursively check whether *key* exists anywhere in a nested dict/list."""
+    if isinstance(obj, dict):
+        if key in obj:
+            return True
+        return any(_deep_has_key(v, key) for v in obj.values())
+    if isinstance(obj, list):
+        return any(_deep_has_key(item, key) for item in obj)
+    return False
+
+
+def test_project_removes_body_preview_from_results() -> None:
+    """[02] bodyPreview must not appear in any results[] entry after projection."""
+    projected = _project_for_display(_FAKE_IDOR_RESPONSE.copy())
+    assert not _deep_has_key(projected, "bodyPreview"), (
+        "bodyPreview found in projected dict — PII leak to stdout"
+    )
+
+
+def test_project_removes_body_preview_from_baseline() -> None:
+    """[02] bodyPreview must not appear in baseline after projection."""
+    projected = _project_for_display(_FAKE_IDOR_RESPONSE.copy())
+    assert "bodyPreview" not in projected.get("baseline", {}), (
+        "bodyPreview still present in baseline after projection"
+    )
+
+
+def test_project_removes_note_from_dict() -> None:
+    """[13] note must be removed from the projected dict (it goes to stderr, not stdout)."""
+    projected = _project_for_display(_FAKE_IDOR_RESPONSE.copy())
+    assert "note" not in projected, (
+        "note key still present in projected dict — corrupts NDJSON consumers"
+    )
+
+
+def test_project_returns_note_text() -> None:
+    """[13] _project_for_display must return the note text so the caller can echo it to stderr."""
+    projected, note = _project_for_display(_FAKE_IDOR_RESPONSE.copy(), return_note=True)
+    assert note == _FAKE_IDOR_RESPONSE["note"]
+
+
+def test_project_drops_empty_ignored_own_values() -> None:
+    """[13] ignoredOwnValues=[] must be dropped from the projected dict."""
+    projected = _project_for_display(_FAKE_IDOR_RESPONSE.copy())
+    assert "ignoredOwnValues" not in projected, (
+        "empty ignoredOwnValues still present — clutters output"
+    )
+
+
+def test_project_keeps_non_empty_ignored_own_values() -> None:
+    """[13] ignoredOwnValues=[...] must be PRESERVED when non-empty."""
+    data = dict(_FAKE_IDOR_RESPONSE)
+    data["ignoredOwnValues"] = ["100", "101"]
+    projected = _project_for_display(data)
+    assert projected.get("ignoredOwnValues") == ["100", "101"]
+
+
+def test_project_preserves_vulnerable_count() -> None:
+    """[02] vulnerableCount must survive projection so _has_findings still works."""
+    projected = _project_for_display(_FAKE_IDOR_RESPONSE.copy())
+    assert projected.get("vulnerableCount") == 1
+
+
+def test_project_preserves_results_minus_body_preview() -> None:
+    """[02] results[] entries are kept (minus bodyPreview) after projection."""
+    projected = _project_for_display(_FAKE_IDOR_RESPONSE.copy())
+    results = projected.get("results", [])
+    assert len(results) == 2
+    for entry in results:
+        assert "bodyPreview" not in entry
+        assert "targetId" in entry  # structural fields preserved
+
+
+def test_has_findings_on_projected_dict() -> None:
+    """_has_findings must still detect findings after projection (exit_on= contract preserved)."""
+    projected = _project_for_display(_FAKE_IDOR_RESPONSE.copy())
+    assert _has_findings(projected) is True
+
+
+def test_project_no_body_preview_input_is_identity_like() -> None:
+    """When there is no bodyPreview/note/ignoredOwnValues, projection is essentially a no-op."""
+    data: dict[str, Any] = {"vulnerableCount": 0, "results": [], "anomalousCount": 0}
+    projected = _project_for_display(data)
+    assert projected == data
+
+
+def test_project_handles_missing_baseline_gracefully() -> None:
+    """projection must not crash when baseline key is absent."""
+    data = {k: v for k, v in _FAKE_IDOR_RESPONSE.items() if k != "baseline"}
+    projected = _project_for_display(data)
+    assert "baseline" not in projected
+
+
+def test_project_handles_deeply_nested_body_preview() -> None:
+    """bodyPreview removal is recursive — nested dicts inside results[] are also cleaned."""
+    data: dict[str, Any] = {
+        "vulnerableCount": 1,
+        "results": [
+            {"nested": {"bodyPreview": "secret"}, "targetId": "1"},
+        ],
+        "ignoredOwnValues": [],
+    }
+    projected = _project_for_display(data)
+    assert not _deep_has_key(projected, "bodyPreview")
 
 
 @pytest.mark.skipif(not _burp_up, reason="needs live Burp REST on :8089")
