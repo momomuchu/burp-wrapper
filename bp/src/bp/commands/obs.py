@@ -31,10 +31,19 @@ from bp.output import render
 # ---------------------------------------------------------------------------
 
 
-def _require_ledger() -> bool:
-    """Return True if the ledger is enabled; otherwise emit a note and return False."""
-    if not load_config().ledger:
-        typer.echo("note: ledger is disabled (ledger=off in config).", err=True)
+def _require_ledger(ctx: typer.Context) -> bool:
+    """Return True if the ledger is enabled; otherwise emit an error and return False.
+
+    Honours ctx.obj.no_ledger (set by --no-ledger / BP_NO_LEDGER) by passing
+    ledger=False to load_config(), mirroring cliutil.run's resolution pattern.
+    """
+    state: State | None = ctx.obj
+    ledger_override: bool | None = False if (state is not None and state.no_ledger) else None
+    if not load_config(ledger=ledger_override).ledger:
+        typer.echo(
+            "error: ledger is disabled (ledger=off / --no-ledger) — cannot query/tag",
+            err=True,
+        )
         return False
     return True
 
@@ -77,7 +86,7 @@ def log_cmd(
 
     Reads from ~/.bp/ledger.db (or BP_LEDGER_PATH).  Does not require Burp.
     """
-    if not _require_ledger():
+    if not _require_ledger(ctx):
         raise typer.Exit(1)
 
     filters = QueryFilters(
@@ -88,8 +97,12 @@ def log_cmd(
     except (OSError, sqlite3.Error) as exc:
         typer.echo(f"error: ledger unavailable: {exc}", err=True)
         raise typer.Exit(1)
-    with ledger_ctx as ledger:
-        rows = ledger.query(filters)
+    try:
+        with ledger_ctx as ledger:
+            rows = ledger.query(filters)
+    except sqlite3.Error as exc:
+        typer.echo(f"error: ledger unavailable: {exc}", err=True)
+        raise typer.Exit(1)
 
     fmt, fields = _resolve_fmt_fields(ctx)
     data: list[dict[str, Any]] = [r.as_dict() for r in rows]
@@ -115,7 +128,7 @@ def tag_cmd(
 
     Exits 1 if the ledger is disabled or the opId is not found (the tag was not applied).
     """
-    if not _require_ledger():
+    if not _require_ledger(ctx):
         raise typer.Exit(1)
 
     try:
@@ -123,8 +136,12 @@ def tag_cmd(
     except (OSError, sqlite3.Error) as exc:
         typer.echo(f"error: ledger unavailable: {exc}", err=True)
         raise typer.Exit(1)
-    with ledger_ctx as ledger:
-        found = ledger.tag(op_id, name)
+    try:
+        with ledger_ctx as ledger:
+            found = ledger.tag(op_id, name)
+    except sqlite3.Error as exc:
+        typer.echo(f"error: ledger unavailable: {exc}", err=True)
+        raise typer.Exit(1)
 
     if not found:
         typer.echo(f"error: op id {op_id!r} not found in ledger.", err=True)
