@@ -27,7 +27,11 @@ class DecoderService {
     fun decode(request: DecodeRequest): DecodeResponse {
         val encoding = request.encoding ?: detectEncoding(request.data)
         val result = when (encoding.lowercase()) {
-            "base64" -> String(Base64.getDecoder().decode(request.data))
+            "base64" -> try {
+                String(Base64.getDecoder().decode(request.data))
+            } catch (_: IllegalArgumentException) {
+                throw IllegalArgumentException("Invalid base64 input")
+            }
             "url" -> URLDecoder.decode(request.data, Charsets.UTF_8)
             "hex" -> {
                 require(request.data.length % 2 == 0) { "Hex input must have an even number of characters" }

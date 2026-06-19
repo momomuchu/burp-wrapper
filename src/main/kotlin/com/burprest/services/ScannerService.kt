@@ -30,7 +30,8 @@ class ScannerService(private val api: MontoyaApi) {
         } catch (e: Throwable) {
             throw IllegalStateException(
                 "Failed to start crawl. This requires Burp Suite Professional with Scanner enabled. " +
-                "Ensure the target URL is in scope. Error: ${e::class.simpleName}: ${e.message}"
+                "Ensure the target URL is in scope.",
+                e,
             )
         }
     }
@@ -45,7 +46,8 @@ class ScannerService(private val api: MontoyaApi) {
         } catch (e: Throwable) {
             throw IllegalStateException(
                 "Failed to start audit. Active scanning requires Burp Suite Professional. " +
-                "Community Edition only supports passive scanning. Error: ${e::class.simpleName}: ${e.message}"
+                "Community Edition only supports passive scanning.",
+                e,
             )
         }
     }
@@ -61,8 +63,8 @@ class ScannerService(private val api: MontoyaApi) {
             return ScanStartResponse(scanId = id, status = "running")
         } catch (e: Throwable) {
             throw IllegalStateException(
-                "Failed to start crawl+audit. This requires Burp Suite Professional. " +
-                "Error: ${e::class.simpleName}: ${e.message}"
+                "Failed to start crawl+audit. This requires Burp Suite Professional.",
+                e,
             )
         }
     }
@@ -82,30 +84,26 @@ class ScannerService(private val api: MontoyaApi) {
 
     fun issues(scanId: String): ScanIssuesResponse {
         val scan = scans[scanId] ?: throw IllegalArgumentException("Scan not found: $scanId")
-        return try {
-            val auditIssues = when (scan) {
-                is ScanState.AuditState -> scan.audit.issues()
-                is ScanState.CrawlAndAuditState -> scan.audit.issues()
-                else -> emptyList()
-            }
-
-            ScanIssuesResponse(
-                scanId = scanId,
-                issues = auditIssues.map {
-                    ScanIssue(
-                        name = it.name(),
-                        url = it.baseUrl(),
-                        severity = it.severity().name,
-                        confidence = it.confidence().name,
-                        detail = it.detail(),
-                        remediation = it.remediation(),
-                    )
-                },
-                total = auditIssues.size,
-            )
-        } catch (e: Throwable) {
-            ScanIssuesResponse(scanId = scanId, issues = emptyList(), total = 0)
+        // No catch: a failure to read issues is a real error, not "0 issues" (which reads as success).
+        val auditIssues = when (scan) {
+            is ScanState.AuditState -> scan.audit.issues()
+            is ScanState.CrawlAndAuditState -> scan.audit.issues()
+            else -> emptyList()
         }
+        return ScanIssuesResponse(
+            scanId = scanId,
+            issues = auditIssues.map {
+                ScanIssue(
+                    name = it.name(),
+                    url = it.baseUrl(),
+                    severity = it.severity().name,
+                    confidence = it.confidence().name,
+                    detail = it.detail(),
+                    remediation = it.remediation(),
+                )
+            },
+            total = auditIssues.size,
+        )
     }
 
     fun pause(scanId: String): ScanStatusResponse {
@@ -122,24 +120,20 @@ class ScannerService(private val api: MontoyaApi) {
     }
 
     fun issueDefinitions(): IssueDefinitionsResponse {
-        return try {
-            val issues = api.siteMap().issues()
-            val uniqueNames = mutableSetOf<String>()
-            val defs = issues.mapNotNull {
-                val name = it.name()
-                if (uniqueNames.add(name)) {
-                    IssueDefinition(
-                        name = name,
-                        typeIndex = 0L,
-                        description = it.detail() ?: "",
-                        remediation = it.remediation() ?: "",
-                    )
-                } else null
-            }
-            IssueDefinitionsResponse(definitions = defs, total = defs.size)
-        } catch (e: Throwable) {
-            IssueDefinitionsResponse(definitions = emptyList(), total = 0)
+        val issues = api.siteMap().issues()
+        val uniqueNames = mutableSetOf<String>()
+        val defs = issues.mapNotNull {
+            val name = it.name()
+            if (uniqueNames.add(name)) {
+                IssueDefinition(
+                    name = name,
+                    typeIndex = 0L,
+                    description = it.detail() ?: "",
+                    remediation = it.remediation() ?: "",
+                )
+            } else null
         }
+        return IssueDefinitionsResponse(definitions = defs, total = defs.size)
     }
 
     private fun getIssueCount(scan: ScanState): Int = try {

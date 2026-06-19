@@ -87,7 +87,10 @@ class RestServer(private val api: MontoyaApi, private val port: Int = 8089) {
         }
 
         install(CORS) {
-            anyHost()
+            // Loopback-only API: restrict cross-origin to localhost so a random website's JS can't
+            // drive the local Burp via :8089 (the bp CLI itself sends no Origin and is unaffected).
+            allowHost("localhost:$port")
+            allowHost("127.0.0.1:$port")
             allowMethod(HttpMethod.Get)
             allowMethod(HttpMethod.Post)
             allowMethod(HttpMethod.Put)

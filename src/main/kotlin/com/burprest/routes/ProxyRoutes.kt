@@ -13,12 +13,17 @@ fun Route.proxyRoutes(service: ProxyService) {
             val limit = call.parameters["limit"]?.toIntOrNull()
             val offset = call.parameters["offset"]?.toIntOrNull()
             val filterHost = call.parameters["host"]
+            // Validate bounds before they reach the service — a negative offset/limit otherwise
+            // crashed into an internal exception.
+            if (limit != null && limit < 1) throw IllegalArgumentException("limit must be >= 1")
+            if (offset != null && offset < 0) throw IllegalArgumentException("offset must be >= 0")
             call.respond(ApiResponse.ok(service.getHistory(limit, offset, filterHost)))
         }
 
         get("/history/{id}") {
+            // A non-numeric id is a usage error (400 via the global handler), not a 200 envelope.
             val id = call.parameters["id"]?.toIntOrNull()
-                ?: return@get call.respond(ApiResponse.error<Unit>("INVALID_PARAM", "Invalid ID"))
+                ?: throw IllegalArgumentException("id must be a number")
             call.respond(ApiResponse.ok(service.getHistoryEntry(id)))
         }
 
